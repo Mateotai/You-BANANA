@@ -31,7 +31,7 @@ const server = http.createServer((req, res) => {
   const page = await browser.newPage({ viewport: { width: 1080, height: 1920 }, deviceScaleFactor: 1 });
   page.on('console', (m) => console.log('[page]', m.text()));
   page.on('pageerror', (e) => console.error('[page error]', e));
-  const q = `mode=${mode}` + (args.screen ? `&screen=${args.screen}` : '');
+  const q = `mode=${mode}` + (args.screen ? `&screen=${args.screen}` : '') + (args.ref ? '&ref=1' : '');
   await page.goto(`http://localhost:${port}/src/stage.html?${q}`);
   await page.waitForFunction(() => window.READY === true, null, { timeout: 120000 });
   const { DURATION, FPS } = await page.evaluate(() => window.META);
@@ -41,7 +41,7 @@ const server = http.createServer((req, res) => {
     const stills = String(args.still).split(',').map(Number);
     for (const t of stills) {
       await page.evaluate((t) => window.renderFrame(t), t);
-      const f = path.join(outDir, `still-${mode}-${t}.png`);
+      const f = path.join(outDir, `still-${mode}${args.ref ? '-ref' : ''}-${t}.png`);
       await stage.screenshot({ path: f });
       console.log(f);
     }

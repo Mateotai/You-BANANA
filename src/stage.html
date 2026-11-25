@@ -78,10 +78,16 @@
   const params = new URLSearchParams(location.search);
   const mode = params.get('mode') || '2d';
   if (params.get('screen') === 'green') document.getElementById('screen').classList.add('green');
+  // ?ref=1 : sólo la figura sobre fondo blanco, con la vista de la foto de producto (para comparar)
+  const REF = params.get('ref') === '1';
+  if (REF) {
+    document.getElementById('stage').style.background = '#fff';
+    for (const id of ['screenWrap', 'bubble', 'vignette']) document.getElementById(id).style.display = 'none';
+  }
 
   const canvas = document.getElementById('banana');
   const mod = mode === '3d' ? await import('./banana3d.js') : await import('./banana2d.js');
-  const renderer = await mod.createRenderer(canvas);
+  const renderer = await mod.createRenderer(canvas, { ref: REF });
 
   const $ = (id) => document.getElementById(id);
   function renderOverlay(s) {

@@ -12,23 +12,24 @@ const YELLOW = new THREE.Color('#ffdc00');
 
 // ---------------------------------------------------------------- forma
 const HB = 6.2; // alto del cuerpo (sin el tallo)
-const RX = 1.8, RZ = 1.02; // radios en la parte ancha: más ancho que profundo, como la figura
-const BZ = 1.5; // cuánto se inclina la punta hacia delante (lomo curvo detrás)
+const RX = 1.76, RZ = 1.0; // radios en la parte ancha: más ancho que profundo, como la figura
+const BZ = 0.6; // cuánto se inclina la punta hacia delante
+const BACK = 0.25; // el lomo se curva hacia atrás a media altura (forma de plátano)
 const FRONT = Math.PI / 2; // +z es la parte de delante (cara, rodillas)
 
 // redondeo de la base (abajo) y del corte del tallo (arriba)
 function rounding(t) {
   let r = 1;
-  if (t < 0.24) r = Math.pow(Math.max(0, 1 - Math.pow((0.24 - t) / 0.24, 2.2)), 1 / 2.2);
+  if (t < 0.32) r = Math.pow(Math.max(0, 1 - Math.pow((0.32 - t) / 0.32, 2.0)), 1 / 2.0);
   return r;
 }
 // estrechamiento hacia la punta (distinto en ancho y en fondo: arriba queda casi cuadrado)
-const taper = (t, end) => (t < 0.3 ? 1 : 1 - (1 - end) * Math.pow((t - 0.3) / 0.7, 2.0));
-const px = (t) => taper(t, 0.35), pz = (t) => taper(t, 0.56);
+const taper = (t, end) => (t < 0.42 ? 1 : 1 - (1 - end) * Math.pow((t - 0.42) / 0.58, 2.0));
+const px = (t) => taper(t, 0.34), pz = (t) => taper(t, 0.56);
 // columna; por encima de t=1 se prolonga en línea recta (para el corte inclinado del tallo)
-const spineZ = (t) => (t <= 1 ? BZ * Math.pow(t, 2.4) : BZ * (1 + 2.4 * (t - 1)));
+const spineZ = (t) => (t <= 1 ? BZ * Math.pow(t, 2.4) - BACK * Math.sin(Math.PI * t) : BZ * (1 + 2.4 * (t - 1)) + BACK * Math.PI * (t - 1));
 const TOP_C = new THREE.Vector3(0, HB, BZ);
-const TOP_N = new THREE.Vector3(0, HB, 2.4 * BZ).normalize(); // perpendicular al corte de arriba
+const TOP_N = new THREE.Vector3(0, HB, 2.4 * BZ + BACK * Math.PI).normalize(); // perpendicular al corte de arriba
 function smax(a, b, k) {
   const h = Math.max(k - Math.abs(a - b), 0) / k;
   return Math.max(a, b) + h * h * k * 0.25;
@@ -47,7 +48,7 @@ function bodySD(x, y, z) {
   if (t < 0) d = Math.max(d, -y);
   // corte plano, perpendicular a la columna, donde se encaja el tallo
   const plane = (y - TOP_C.y) * TOP_N.y + (z - TOP_C.z) * TOP_N.z;
-  return smax(d, plane, 0.12);
+  return smax(d, plane, 0.22);
 }
 // punto de la superficie del cuerpo para una altura relativa t y un ángulo th
 function bodySurface(t, th) {
@@ -78,12 +79,12 @@ function smin(a, b, k) {
 // extremidades (para cada lado s = -1 / +1)
 const LIMBS = [-1, 1].map((s) => {
   const P = (x, y, z) => [s * x, y, z];
-  const shoulder = P(1.6, 3.05, 0.1), elbow = P(1.45, 2.35, 0.95), wrist = P(1.02, 1.72, 1.75), hand = P(0.62, 1.47, 2.12);
-  const hip = P(0.5, 0.85, 0.45), knee = P(0.5, 2.0, 1.55), ankle = P(0.6, 0.38, 2.05), toe = P(0.66, 0.31, 2.38);
+  const shoulder = P(1.55, 3.05, 0.1), elbow = P(1.5, 2.32, 0.98), wrist = P(1.05, 1.74, 1.8), hand = P(0.62, 1.47, 2.12);
+  const hip = P(0.5, 0.85, 0.45), knee = P(0.5, 2.0, 1.55), ankle = P(0.64, 0.4, 2.15), toe = P(0.7, 0.32, 2.5);
   return {
     shoulder, hip,
-    arm: [roundCone(shoulder, elbow, 0.285, 0.27), roundCone(elbow, wrist, 0.27, 0.265), roundCone(wrist, hand, 0.265, 0.285)],
-    leg: [roundCone(hip, knee, 0.42, 0.4), roundCone(knee, ankle, 0.385, 0.315), roundCone(ankle, toe, 0.315, 0.31)],
+    arm: [roundCone(shoulder, elbow, 0.31, 0.275), roundCone(elbow, wrist, 0.27, 0.265), roundCone(wrist, hand, 0.265, 0.27)],
+    leg: [roundCone(hip, knee, 0.44, 0.43), roundCone(knee, ankle, 0.4, 0.32), roundCone(ankle, toe, 0.31, 0.3)],
   };
 });
 
@@ -101,7 +102,9 @@ function figureSD(x, y, z) {
     // pierna: muslo y espinilla en un solo tubo (la rodilla es sólo la curva)
     let leg = L.leg[0](x, y, z);
     leg = smin(leg, L.leg[1](x, y, z), 0.06);
-    leg = smin(leg, L.leg[2](x, y, z), 0.1);
+    // pie: el mismo tubo, un poco aplanado (no una bola)
+    const FY = 1.3;
+    leg = smin(leg, L.leg[2](x, 0.3 + (y - 0.3) * FY, z) / FY, 0.12);
     const dh = (x - L.hip[0]) ** 2 + (y - L.hip[1]) ** 2 + (z - L.hip[2]) ** 2;
     d = smin(d, leg, 0.04 + 0.35 * Math.exp(-dh / 0.35));
   }
@@ -175,7 +178,7 @@ function polygonize(sdf, min, max, step) {
 
 // material con las líneas de impresión de la PLA (según la altura local de la figura)
 function plaMaterial(color, rough = 0.5, lines = 0.06) {
-  const m = new THREE.MeshPhysicalMaterial({ color, roughness: rough, metalness: 0, clearcoat: 0.08, clearcoatRoughness: 0.5 });
+  const m = new THREE.MeshPhysicalMaterial({ color, roughness: rough, metalness: 0, specularIntensity: 0.45 });
   m.onBeforeCompile = (sh) => {
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying float vLayerY;')
@@ -187,23 +190,22 @@ function plaMaterial(color, rough = 0.5, lines = 0.06) {
   return m;
 }
 
-export async function createRenderer(canvas) {
+export async function createRenderer(canvas, opts = {}) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
   renderer.setPixelRatio(1);
   renderer.setSize(W, H, false);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
-  renderer.toneMapping = THREE.NeutralToneMapping;
-  renderer.toneMappingExposure = 1.25;
+  renderer.toneMapping = THREE.NoToneMapping;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
   const scene = new THREE.Scene();
   const pmrem = new THREE.PMREMGenerator(renderer);
   scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-  scene.environmentIntensity = 0.2;
+  scene.environmentIntensity = 0.15;
 
-  scene.add(new THREE.HemisphereLight('#fff2cc', '#f5d6c0', 0.55));
-  const key = new THREE.DirectionalLight('#fff3df', 2.8);
+  scene.add(new THREE.HemisphereLight('#fff6e0', '#f5d6c0', 0.9));
+  const key = new THREE.DirectionalLight('#fff6e8', 1.95);
   key.position.set(-1, 12, 13); // luz de frente-derecha y desde arriba, como en la foto
   key.castShadow = true;
   key.shadow.mapSize.set(2048, 2048);
@@ -218,20 +220,20 @@ export async function createRenderer(canvas) {
   const ped = new THREE.Mesh(new THREE.CylinderGeometry(6.2, 6.2, 1.6, 96), new THREE.MeshStandardMaterial({ color: '#f6eee5', roughness: 0.95 }));
   ped.position.y = -0.8;
   ped.receiveShadow = true;
-  scene.add(ped);
+  if (!opts.ref) scene.add(ped);
 
   // ---------- figura (una sola pieza) ----------
   const fig = new THREE.Group();
   scene.add(fig);
   const bodyMat = plaMaterial(YELLOW, 0.5);
-  const body = new THREE.Mesh(polygonize(figureSD, [-2.4, -0.05, -1.4], [2.4, HB + 0.6, 2.9], 0.032), bodyMat);
+  const body = new THREE.Mesh(polygonize(figureSD, [-2.5, -0.05, -1.6], [2.5, HB + 0.6, 3.4], 0.032), bodyMat);
   body.castShadow = body.receiveShadow = true;
   fig.add(body);
 
   // tallo marrón encajado en la punta
-  const stemGeo = new RoundedBoxGeometry(1.0, 0.92, 1.0, 4, 0.12);
+  const stemGeo = new RoundedBoxGeometry(1.06, 0.74, 1.06, 4, 0.13);
   const topDir = TOP_N.clone();
-  const stemPos = TOP_C.clone().addScaledVector(topDir, 0.36);
+  const stemPos = TOP_C.clone().addScaledVector(topDir, 0.24);
   const stemRot = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), topDir).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -0.55));
   stemGeo.applyMatrix4(new THREE.Matrix4().compose(stemPos, stemRot, new THREE.Vector3(1, 1, 1)));
   const stem = new THREE.Mesh(stemGeo, plaMaterial(new THREE.Color('#7a2e12'), 0.62, 0.12));
@@ -322,7 +324,12 @@ export async function createRenderer(canvas) {
       const target = baseTarget.clone().lerp(faceWorld, f);
       camera.position.copy(target).addScaledVector(camDir, D0 / Math.pow(s.zoom, 0.88));
       camera.lookAt(target);
-      camera.setViewOffset(W, H, -s.shake.x, OFFSET0 + (OFFSET_ZOOM - OFFSET0) * f - s.shake.y, W, H);
+      if (opts.ref) {
+        // encuadre de comparación: figura centrada y grande
+        camera.position.copy(new THREE.Vector3(0.3, 3.5, 0.7)).addScaledVector(camDir, 26);
+        camera.lookAt(0.3, 3.5, 0.7);
+        camera.clearViewOffset();
+      } else camera.setViewOffset(W, H, -s.shake.x, OFFSET0 + (OFFSET_ZOOM - OFFSET0) * f - s.shake.y, W, H);
       camera.updateProjectionMatrix();
       renderer.render(scene, camera);
     },
