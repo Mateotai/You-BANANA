@@ -1,0 +1,26 @@
+{
+  "name": "you-banana",
+  "version": "1.0.0",
+  "description": "Plátano que reacciona a videos virales (2D y 3D)",
+  "scripts": {
+    "render:2d": "node scripts/render.cjs --mode 2d",
+    "render:3d": "node scripts/render.cjs --mode 3d",
+    "render:green": "node scripts/render.cjs --mode 3d --screen green",
+    "sfx": "node scripts/sfx.mjs out/sfx.wav"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Mateotai/You-BANANA.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Mateotai/You-BANANA/issues"
+  },
+  "homepage": "https://github.com/Mateotai/You-BANANA#readme",
+  "dependencies": {
+    "three": "^0.170.0"
+  },
+  "type": "module"
+}

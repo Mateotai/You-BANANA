@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>You-BANANA stage</title>
+<script type="importmap">
+{ "imports": {
+  "three": "../node_modules/three/build/three.module.js",
+  "three/addons/": "../node_modules/three/examples/jsm/"
+} }
+</script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Rubik:wght@600;800&display=swap');
+  html, body { margin: 0; padding: 0; background: #000; }
+  #stage {
+    position: relative; width: 1080px; height: 1920px; overflow: hidden;
+    font-family: 'Rubik', 'Arial Rounded MT Bold', 'Helvetica Neue', Arial, sans-serif;
+    background:
+      radial-gradient(circle at 12% 62%, rgba(255,255,255,.55) 0 90px, transparent 160px),
+      radial-gradient(circle at 92% 70%, rgba(255,190,200,.55) 0 120px, transparent 220px),
+      radial-gradient(circle at 80% 98%, rgba(255,230,160,.5) 0 140px, transparent 260px),
+      linear-gradient(180deg, #2a2320 0%, #3a2e29 46%, #f6e7d6 47.5%, #f9ddd6 100%);
+  }
+  #banana { position: absolute; inset: 0; width: 1080px; height: 1920px; }
+  #vignette {
+    position: absolute; inset: 0; pointer-events: none; opacity: 0;
+    background: radial-gradient(ellipse at 50% 47%, transparent 35%, rgba(0,0,0,.85) 100%);
+  }
+  /* ---------- pantalla del video ---------- */
+  #screenWrap { position: absolute; left: 40px; top: 70px; width: 1000px; height: 830px; }
+  #screen {
+    position: absolute; inset: 0; border-radius: 38px; overflow: hidden; background: #050505;
+    box-shadow: 0 0 0 6px #111, 0 18px 50px rgba(0,0,0,.55);
+  }
+  #screen.green { background: #00ff00; }
+  #screen.green #videoLabel, #screen.green #bar, #screen.green #flash, #screen.green #replay, #screen.green #live { display: none; }
+  #videoLabel {
+    position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%);
+    text-align: center; color: #fff; font-weight: 800; font-size: 150px; letter-spacing: 18px;
+  }
+  #videoLabel small { display: block; font-size: 34px; letter-spacing: 6px; font-weight: 600; opacity: .45; margin-top: 8px; }
+  #flash { position: absolute; inset: 0; background: #fff; opacity: 0; }
+  #bar { position: absolute; left: 34px; right: 34px; bottom: 30px; height: 10px; border-radius: 6px; background: rgba(255,255,255,.22); }
+  #barFill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: 6px; background: #ff3b30; }
+  #barKnob { position: absolute; top: 50%; width: 26px; height: 26px; margin: -13px 0 0 -13px; border-radius: 50%; background: #ff3b30; left: 0; }
+  #live { position: absolute; left: 34px; top: 30px; color: #fff; font-size: 30px; font-weight: 600; opacity: .8; }
+  #replay {
+    position: absolute; left: 50%; top: 50%; width: 220px; height: 220px; margin: -110px 0 0 -110px;
+    border-radius: 50%; background: rgba(255,255,255,.95); color: #111; font-size: 150px; line-height: 220px;
+    text-align: center; transform: scale(0); font-weight: 800;
+  }
+  /* ---------- bocadillo ---------- */
+  #bubble {
+    position: absolute; left: 700px; top: 1030px; padding: 18px 46px 34px; background: #fff; border-radius: 60px;
+    font-size: 96px; font-weight: 800; color: #222; line-height: 60px; transform-origin: 10% 100%; transform: scale(0);
+    box-shadow: 0 10px 0 rgba(0,0,0,.08);
+  }
+  #bubble::after {
+    content: ''; position: absolute; left: 30px; bottom: -26px; border: 22px solid transparent; border-top: 30px solid #fff; border-left: 4px solid transparent;
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="banana" width="1080" height="1920"></canvas>
+  <div id="vignette"></div>
+  <div id="screenWrap"><div id="screen">
+    <div id="live">▶ viral</div>
+    <div id="videoLabel">VIDEO<small>aquí va el video viral</small></div>
+    <div id="bar"><div id="barFill"></div><div id="barKnob"></div></div>
+    <div id="flash"></div>
+    <div id="replay">↻</div>
+  </div></div>
+  <div id="bubble">...</div>
+</div>
+<script type="module">
+  import { getState, DURATION, FPS } from './timeline.js';
+  const params = new URLSearchParams(location.search);
+  const mode = params.get('mode') || '2d';
+  if (params.get('screen') === 'green') document.getElementById('screen').classList.add('green');
+
+  const canvas = document.getElementById('banana');
+  const mod = mode === '3d' ? await import('./banana3d.js') : await import('./banana2d.js');
+  const renderer = await mod.createRenderer(canvas);
+
+  const $ = (id) => document.getElementById(id);
+  function renderOverlay(s) {
+    const v = s.video;
+    $('screenWrap').style.transform = `translate(${v.shake.x}px, ${v.shake.y - v.hidden * 1100}px)`;
+    $('flash').style.opacity = v.flash.toFixed(3);
+    const p = (v.progress * 100).toFixed(2) + '%';
+    $('barFill').style.width = p; $('barKnob').style.left = p;
+    $('replay').style.transform = `scale(${v.replay.toFixed(3)})`;
+    $('replay').style.opacity = v.replay > 0 ? 1 : 0;
+    $('vignette').style.opacity = s.vignette;
+    const b = $('bubble');
+    if (s.bubble) { b.textContent = s.bubble.text; b.style.transform = `scale(${s.bubble.scale.toFixed(3)})`; }
+    else b.style.transform = 'scale(0)';
+  }
+
+  window.renderFrame = async (t) => {
+    const s = getState(t);
+    renderOverlay(s);
+    await renderer.render(s, t);
+    return true;
+  };
+  window.META = { DURATION, FPS, mode };
+  await document.fonts.ready;
+  await window.renderFrame(0);
+  window.READY = true;
+
+  // vista previa en vivo en el navegador: ?play=1
+  if (params.get('play')) {
+    const t0 = performance.now();
+    const loop = async () => { await window.renderFrame(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); };
+    loop();
+  }
+</script>
+</body>
+</html>
