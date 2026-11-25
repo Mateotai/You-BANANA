@@ -1,109 +1,188 @@
-// Plátano estilo 3D (figura impresa en PLA), con three.js.
-// Medidas reales de la figura: 7.2 cm alto, 4.2 cm ancho, 3 cm fondo (1 unidad = 1 cm).
+// Plátano estilo 3D: réplica de la figura impresa en PLA (7,2 cm de alto, 1 unidad = 1 cm).
+// El cuerpo, los brazos y las piernas son UNA sola pieza: se modelan como una función de
+// distancia (SDF) con uniones suaves y se convierten en malla con "marching cubes".
+// Así no hay bolas en las articulaciones ni cortes entre piezas, igual que la figura real.
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+import { edgeTable, triTable } from 'three/addons/objects/MarchingCubes.js';
 
 const W = 1080, H = 1920;
-const BODY_H = 6.4;
-const YELLOW = new THREE.Color('#ffd814');
-const GREEN = new THREE.Color('#52b848');
+const YELLOW = new THREE.Color('#ffdc00');
 
-// ---------- forma del cuerpo ----------
-// La columna se curva hacia delante (+z): lomo convexo detrás, punta sobre las rodillas.
-const spine = (t) => new THREE.Vector3(0, t * BODY_H, 1.5 * t * t - 0.35 * t);
-function radiusAt(t) {
-  let r;
-  if (t < 0.2) {
-    const k = (0.2 - t) / 0.2;
-    r = Math.pow(Math.max(0, 1 - Math.pow(k, 2.6)), 1 / 2.6);
-  } else {
-    r = t < 0.3 ? 1 : 1 - 0.6 * Math.pow((t - 0.3) / 0.7, 1.5);
-  }
-  if (t > 0.965) r *= Math.sqrt(Math.max(0, 1 - Math.pow((t - 0.965) / 0.035, 2)));
+// ---------------------------------------------------------------- forma
+const HB = 6.2; // alto del cuerpo (sin el tallo)
+const RX = 1.8, RZ = 1.02; // radios en la parte ancha: más ancho que profundo, como la figura
+const BZ = 1.5; // cuánto se inclina la punta hacia delante (lomo curvo detrás)
+const FRONT = Math.PI / 2; // +z es la parte de delante (cara, rodillas)
+
+// redondeo de la base (abajo) y del corte del tallo (arriba)
+function rounding(t) {
+  let r = 1;
+  if (t < 0.24) r = Math.pow(Math.max(0, 1 - Math.pow((0.24 - t) / 0.24, 2.2)), 1 / 2.2);
   return r;
 }
-const RX = 1.65, RZ = 1.4;
-// sección: pentágono redondeado (las aristas del plátano), con una cara plana delante
-const FRONT = Math.PI / 2; // dirección +z
-function surface(t, th) {
-  const c = spine(t);
-  const r = radiusAt(t);
-  const ridge = 1 + 0.045 * Math.cos(5 * (th - FRONT - Math.PI / 5));
-  // la parte de delante algo más plana (donde está la cara)
-  const flat = 1 - 0.06 * Math.pow(Math.max(0, Math.cos(th - FRONT)), 4);
-  return new THREE.Vector3(c.x + Math.cos(th) * RX * r * ridge, c.y, c.z + Math.sin(th) * RZ * r * ridge * flat);
+// estrechamiento hacia la punta (distinto en ancho y en fondo: arriba queda casi cuadrado)
+const taper = (t, end) => (t < 0.3 ? 1 : 1 - (1 - end) * Math.pow((t - 0.3) / 0.7, 2.0));
+const px = (t) => taper(t, 0.35), pz = (t) => taper(t, 0.56);
+// columna; por encima de t=1 se prolonga en línea recta (para el corte inclinado del tallo)
+const spineZ = (t) => (t <= 1 ? BZ * Math.pow(t, 2.4) : BZ * (1 + 2.4 * (t - 1)));
+const TOP_C = new THREE.Vector3(0, HB, BZ);
+const TOP_N = new THREE.Vector3(0, HB, 2.4 * BZ).normalize(); // perpendicular al corte de arriba
+function smax(a, b, k) {
+  const h = Math.max(k - Math.abs(a - b), 0) / k;
+  return Math.max(a, b) + h * h * k * 0.25;
 }
-function surfaceFrame(t, th) {
-  const e = 1e-3;
-  const p = surface(t, th);
-  const dth = surface(t, th + e).sub(surface(t, th - e)).normalize();
-  const dt = surface(Math.min(1, t + e), th).sub(surface(Math.max(0, t - e), th)).normalize();
-  const n = new THREE.Vector3().crossVectors(dth, dt).normalize();
-  // aseguramos que apunte hacia fuera
-  const c = spine(t);
-  if (n.dot(p.clone().sub(c)) < 0) n.negate();
-  return { p, n, u: dth, v: dt };
+const ridgeAt = (th) => 1 + 0.03 * Math.cos(5 * (th - FRONT - Math.PI / 5));
+const flatAt = (th) => 1 - 0.05 * Math.pow(Math.max(0, Math.cos(th - FRONT)), 4);
+
+function bodySD(x, y, z) {
+  const t = y / HB;
+  const tc = Math.min(1.12, Math.max(0, t));
+  const dz = z - spineZ(tc);
+  const th = Math.atan2(dz, x);
+  const rx = RX * px(tc), rz = RZ * pz(tc) * flatAt(th);
+  const ex = x / rx, ez = dz / rz;
+  let d = (Math.sqrt(ex * ex + ez * ez) - rounding(tc) * ridgeAt(th)) * Math.min(rx, rz);
+  if (t < 0) d = Math.max(d, -y);
+  // corte plano, perpendicular a la columna, donde se encaja el tallo
+  const plane = (y - TOP_C.y) * TOP_N.y + (z - TOP_C.z) * TOP_N.z;
+  return smax(d, plane, 0.12);
+}
+// punto de la superficie del cuerpo para una altura relativa t y un ángulo th
+function bodySurface(t, th) {
+  const r = rounding(t) * ridgeAt(th);
+  return new THREE.Vector3(Math.cos(th) * RX * px(t) * r, t * HB, spineZ(t) + Math.sin(th) * RZ * pz(t) * flatAt(th) * r);
 }
 
-function bodyGeometry() {
-  const NT = 180, NTH = 96;
-  const pos = [], uv = [], idx = [];
-  for (let i = 0; i <= NT; i++) {
-    const t = i / NT;
-    for (let j = 0; j < NTH; j++) {
-      const th = (j / NTH) * Math.PI * 2;
-      const p = surface(t, th);
-      pos.push(p.x, p.y, p.z);
-      uv.push(j / NTH, t);
+// cono redondeado (Inigo Quilez): cápsula con radios distintos en cada punta
+function roundCone(a, b, r1, r2) {
+  const bax = b[0] - a[0], bay = b[1] - a[1], baz = b[2] - a[2];
+  const l2 = bax * bax + bay * bay + baz * baz, rr = r1 - r2, a2 = l2 - rr * rr, il2 = 1 / l2;
+  return (x, y, z) => {
+    const pax = x - a[0], pay = y - a[1], paz = z - a[2];
+    const yy = pax * bax + pay * bay + paz * baz, zz = yy - l2;
+    const xvx = pax * l2 - bax * yy, xvy = pay * l2 - bay * yy, xvz = paz * l2 - baz * yy;
+    const x2 = xvx * xvx + xvy * xvy + xvz * xvz, y2 = yy * yy * l2, z2 = zz * zz * l2;
+    const k = Math.sign(rr) * rr * rr * x2;
+    if (Math.sign(zz) * a2 * z2 > k) return Math.sqrt(x2 + z2) * il2 - r2;
+    if (Math.sign(yy) * a2 * y2 < k) return Math.sqrt(x2 + y2) * il2 - r1;
+    return (Math.sqrt(x2 * a2 * il2) + yy * rr) * il2 - r1;
+  };
+}
+function smin(a, b, k) {
+  const h = Math.max(k - Math.abs(a - b), 0) / k;
+  return Math.min(a, b) - h * h * k * 0.25;
+}
+
+// extremidades (para cada lado s = -1 / +1)
+const LIMBS = [-1, 1].map((s) => {
+  const P = (x, y, z) => [s * x, y, z];
+  const shoulder = P(1.6, 3.05, 0.1), elbow = P(1.45, 2.35, 0.95), wrist = P(1.02, 1.72, 1.75), hand = P(0.62, 1.47, 2.12);
+  const hip = P(0.5, 0.85, 0.45), knee = P(0.5, 2.0, 1.55), ankle = P(0.6, 0.38, 2.05), toe = P(0.66, 0.31, 2.38);
+  return {
+    shoulder, hip,
+    arm: [roundCone(shoulder, elbow, 0.285, 0.27), roundCone(elbow, wrist, 0.27, 0.265), roundCone(wrist, hand, 0.265, 0.285)],
+    leg: [roundCone(hip, knee, 0.42, 0.4), roundCone(knee, ankle, 0.385, 0.315), roundCone(ankle, toe, 0.315, 0.31)],
+  };
+});
+
+function figureSD(x, y, z) {
+  let d = bodySD(x, y, z);
+  for (const L of LIMBS) {
+    // brazo: se funde con el cuerpo sólo en el hombro
+    let arm = L.arm[0](x, y, z);
+    arm = smin(arm, L.arm[1](x, y, z), 0.04);
+    arm = smin(arm, L.arm[2](x, y, z), 0.04);
+    const ds = (x - L.shoulder[0]) ** 2 + (y - L.shoulder[1]) ** 2 + (z - L.shoulder[2]) ** 2;
+    d = smin(d, arm, 0.035 + 0.22 * Math.exp(-ds / 0.2));
+  }
+  for (const L of LIMBS) {
+    // pierna: muslo y espinilla en un solo tubo (la rodilla es sólo la curva)
+    let leg = L.leg[0](x, y, z);
+    leg = smin(leg, L.leg[1](x, y, z), 0.06);
+    leg = smin(leg, L.leg[2](x, y, z), 0.1);
+    const dh = (x - L.hip[0]) ** 2 + (y - L.hip[1]) ** 2 + (z - L.hip[2]) ** 2;
+    d = smin(d, leg, 0.04 + 0.35 * Math.exp(-dh / 0.35));
+  }
+  return Math.max(d, -y); // base plana apoyada en el suelo
+}
+
+// ---------------------------------------------------------------- marching cubes
+const EDGES = [
+  [0, 1, 0, 0, 0, 0], [1, 2, 1, 1, 0, 0], [2, 3, 0, 0, 1, 0], [3, 0, 1, 0, 0, 0],
+  [4, 5, 0, 0, 0, 1], [5, 6, 1, 1, 0, 1], [6, 7, 0, 0, 1, 1], [7, 4, 1, 0, 0, 1],
+  [0, 4, 2, 0, 0, 0], [1, 5, 2, 1, 0, 0], [2, 6, 2, 1, 1, 0], [3, 7, 2, 0, 1, 0],
+]; // [corner a, corner b, eje, offset x, y, z de la esquina mínima]
+const CORNERS = [[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0], [0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]];
+
+function polygonize(sdf, min, max, step) {
+  const nx = Math.ceil((max[0] - min[0]) / step) + 1, ny = Math.ceil((max[1] - min[1]) / step) + 1, nz = Math.ceil((max[2] - min[2]) / step) + 1;
+  const field = new Float32Array(nx * ny * nz);
+  for (let k = 0; k < nz; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++)
+    field[i + nx * (j + ny * k)] = sdf(min[0] + i * step, min[1] + j * step, min[2] + k * step);
+  const pos = [], idx = [], cache = new Map();
+  const vals = new Float32Array(8), eid = new Int32Array(12);
+  for (let k = 0; k < nz - 1; k++) for (let j = 0; j < ny - 1; j++) for (let i = 0; i < nx - 1; i++) {
+    let cube = 0;
+    for (let c = 0; c < 8; c++) {
+      const o = CORNERS[c];
+      vals[c] = field[i + o[0] + nx * (j + o[1] + ny * (k + o[2]))];
+      if (vals[c] < 0) cube |= 1 << c;
     }
+    const edges = edgeTable[cube];
+    if (!edges) continue;
+    for (let e = 0; e < 12; e++) {
+      if (!(edges & (1 << e))) continue;
+      const [ca, cb, axis, ox, oy, oz] = EDGES[e];
+      const key = ((i + ox) + nx * ((j + oy) + ny * (k + oz))) * 3 + axis;
+      let vi = cache.get(key);
+      if (vi === undefined) {
+        const va = vals[ca], vb = vals[cb], f = va / (va - vb);
+        const A = CORNERS[ca], B = CORNERS[cb];
+        pos.push(min[0] + (i + A[0] + (B[0] - A[0]) * f) * step, min[1] + (j + A[1] + (B[1] - A[1]) * f) * step, min[2] + (k + A[2] + (B[2] - A[2]) * f) * step);
+        vi = pos.length / 3 - 1;
+        cache.set(key, vi);
+      }
+      eid[e] = vi;
+    }
+    const base = cube * 16;
+    for (let n = 0; triTable[base + n] !== -1; n += 3) idx.push(eid[triTable[base + n]], eid[triTable[base + n + 1]], eid[triTable[base + n + 2]]);
   }
-  for (let i = 0; i < NT; i++) for (let j = 0; j < NTH; j++) {
-    const a = i * NTH + j, b = i * NTH + ((j + 1) % NTH), c = (i + 1) * NTH + j, d = (i + 1) * NTH + ((j + 1) % NTH);
-    idx.push(a, c, b, b, c, d);
+  // normales suaves a partir del gradiente de la SDF
+  const nrm = new Float32Array(pos.length), e = 0.01;
+  for (let v = 0; v < pos.length; v += 3) {
+    const x = pos[v], y = pos[v + 1], z = pos[v + 2];
+    const gx = sdf(x + e, y, z) - sdf(x - e, y, z), gy = sdf(x, y + e, z) - sdf(x, y - e, z), gz = sdf(x, y, z + e) - sdf(x, y, z - e);
+    const l = Math.hypot(gx, gy, gz) || 1;
+    nrm[v] = gx / l; nrm[v + 1] = gy / l; nrm[v + 2] = gz / l;
   }
+  // orientar los triángulos hacia fuera
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+  let agree = 0;
+  for (let t = 0; t < Math.min(idx.length, 3000); t += 3) {
+    a.fromArray(pos, idx[t] * 3); b.fromArray(pos, idx[t + 1] * 3); c.fromArray(pos, idx[t + 2] * 3);
+    const fn = b.sub(a).cross(c.sub(a));
+    agree += Math.sign(fn.x * nrm[idx[t] * 3] + fn.y * nrm[idx[t] * 3 + 1] + fn.z * nrm[idx[t] * 3 + 2]);
+  }
+  if (agree < 0) for (let t = 0; t < idx.length; t += 3) { const tmp = idx[t + 1]; idx[t + 1] = idx[t + 2]; idx[t + 2] = tmp; }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
   g.setIndex(idx);
-  const m = mergeVertices(g, 1e-5);
-  m.computeVertexNormals();
-  return m;
+  return g;
 }
 
-// tubo con puntas redondeadas
-function limbGeometry(points, radius, radiusFn) {
-  const curve = new THREE.CatmullRomCurve3(points, false, 'centripetal');
-  const tube = new THREE.TubeGeometry(curve, 64, radius, 24, false);
-  if (radiusFn) {
-    // estrecha/ensancha a lo largo del tubo
-    const p = tube.attributes.position;
-    const seg = 64, rad = 24;
-    for (let i = 0; i <= seg; i++) {
-      const c = curve.getPointAt(i / seg);
-      const k = radiusFn(i / seg);
-      for (let j = 0; j <= rad; j++) {
-        const id = i * (rad + 1) + j;
-        const v = new THREE.Vector3().fromBufferAttribute(p, id).sub(c).multiplyScalar(k).add(c);
-        p.setXYZ(id, v.x, v.y, v.z);
-      }
-    }
-    tube.computeVertexNormals();
-  }
-  return { tube, curve };
-}
-
-// material con "líneas de impresión" de la PLA (en el eje Y local de la figura)
-function plaMaterial(color, rough = 0.5) {
-  const m = new THREE.MeshPhysicalMaterial({ color, roughness: rough, metalness: 0, clearcoat: 0.15, clearcoatRoughness: 0.6, sheen: 0.3, sheenColor: new THREE.Color('#ffffff') });
+// material con las líneas de impresión de la PLA (según la altura local de la figura)
+function plaMaterial(color, rough = 0.5, lines = 0.06) {
+  const m = new THREE.MeshPhysicalMaterial({ color, roughness: rough, metalness: 0, clearcoat: 0.08, clearcoatRoughness: 0.5 });
   m.onBeforeCompile = (sh) => {
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying float vLayerY;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvLayerY = position.y;');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', '#include <common>\nvarying float vLayerY;')
-      .replace('#include <color_fragment>', '#include <color_fragment>\n float layer = 0.5 + 0.5 * sin(vLayerY * 115.0);\n diffuseColor.rgb *= 1.0 - 0.07 * layer;');
+      .replace('#include <color_fragment>', `#include <color_fragment>\n float layer = 0.5 + 0.5 * sin(vLayerY * 120.0);\n diffuseColor.rgb *= 1.0 - ${lines.toFixed(3)} * layer;`);
   };
   return m;
 }
@@ -114,27 +193,26 @@ export async function createRenderer(canvas) {
   renderer.setSize(W, H, false);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.NeutralToneMapping;
-  renderer.toneMappingExposure = 1.12;
+  renderer.toneMappingExposure = 1.25;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
   const scene = new THREE.Scene();
   const pmrem = new THREE.PMREMGenerator(renderer);
   scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-  scene.environmentIntensity = 0.35;
+  scene.environmentIntensity = 0.2;
 
-  // luces: cálida tipo foto de producto
-  scene.add(new THREE.HemisphereLight('#fff4e6', '#f2b8b8', 0.55));
-  const key = new THREE.DirectionalLight('#fff3df', 2.3);
-  key.position.set(-6, 14, 10);
+  scene.add(new THREE.HemisphereLight('#fff2cc', '#f5d6c0', 0.55));
+  const key = new THREE.DirectionalLight('#fff3df', 2.8);
+  key.position.set(-1, 12, 13); // luz de frente-derecha y desde arriba, como en la foto
   key.castShadow = true;
   key.shadow.mapSize.set(2048, 2048);
   key.shadow.camera.left = -8; key.shadow.camera.right = 8; key.shadow.camera.top = 10; key.shadow.camera.bottom = -6;
-  key.shadow.radius = 6; key.shadow.bias = -0.0005; key.shadow.normalBias = 0.02;
+  key.shadow.radius = 6; key.shadow.bias = -0.0005; key.shadow.normalBias = 0.03;
   scene.add(key);
-  const rim = new THREE.DirectionalLight('#ffd9e0', 1.4);
-  rim.position.set(8, 6, -8);
-  scene.add(rim);
+  const fill = new THREE.DirectionalLight('#fff0e8', 0.9);
+  fill.position.set(-12, 4, -1);
+  scene.add(fill);
 
   // peana blanca redonda
   const ped = new THREE.Mesh(new THREE.CylinderGeometry(6.2, 6.2, 1.6, 96), new THREE.MeshStandardMaterial({ color: '#f6eee5', roughness: 0.95 }));
@@ -142,94 +220,57 @@ export async function createRenderer(canvas) {
   ped.receiveShadow = true;
   scene.add(ped);
 
-  // ---------- figura ----------
-  const fig = new THREE.Group(); // pivota en la base (balanceo / giro)
+  // ---------- figura (una sola pieza) ----------
+  const fig = new THREE.Group();
   scene.add(fig);
-  const bodyMat = plaMaterial(YELLOW.clone(), 0.48);
-  const add = (geo, mat = bodyMat) => { const m = new THREE.Mesh(geo, mat); m.castShadow = true; m.receiveShadow = true; fig.add(m); return m; };
+  const bodyMat = plaMaterial(YELLOW, 0.5);
+  const body = new THREE.Mesh(polygonize(figureSD, [-2.4, -0.05, -1.4], [2.4, HB + 0.6, 2.9], 0.032), bodyMat);
+  body.castShadow = body.receiveShadow = true;
+  fig.add(body);
 
-  add(bodyGeometry());
+  // tallo marrón encajado en la punta
+  const stemGeo = new RoundedBoxGeometry(1.0, 0.92, 1.0, 4, 0.12);
+  const topDir = TOP_N.clone();
+  const stemPos = TOP_C.clone().addScaledVector(topDir, 0.36);
+  const stemRot = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), topDir).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -0.55));
+  stemGeo.applyMatrix4(new THREE.Matrix4().compose(stemPos, stemRot, new THREE.Vector3(1, 1, 1)));
+  const stem = new THREE.Mesh(stemGeo, plaMaterial(new THREE.Color('#7a2e12'), 0.62, 0.12));
+  stem.castShadow = stem.receiveShadow = true;
+  fig.add(stem);
 
-  // tallo marrón
-  const top = spine(1);
-  const stemMat = plaMaterial(new THREE.Color('#8b4a2c'), 0.6);
-  const stem = add(new RoundedBoxGeometry(0.95, 0.95, 0.95, 4, 0.14), stemMat);
-  const stemDir = spine(1).sub(spine(0.97)).normalize();
-  stem.position.copy(top).addScaledVector(stemDir, 0.28);
-  stem.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), stemDir);
-  stem.rotateY(0.25);
-  // la geometría del tallo usa "position.y" para las líneas: lo aplicamos en la malla
-  stem.geometry.applyMatrix4(new THREE.Matrix4().compose(stem.position, stem.quaternion, new THREE.Vector3(1, 1, 1)));
-  stem.position.set(0, 0, 0); stem.quaternion.identity();
-
-  // piernas: rodillas levantadas, abrazadas por los brazos
-  const legs = [];
-  for (const s of [-1, 1]) {
-    const hip = new THREE.Vector3(s * 0.62, 0.8, 0.7);
-    const knee = new THREE.Vector3(s * 0.64, 2.35, 2.25);
-    const ankle = new THREE.Vector3(s * 0.74, 0.42, 2.95);
-    const { tube } = limbGeometry([hip, new THREE.Vector3(s * 0.63, 1.95, 1.95), knee, new THREE.Vector3(s * 0.7, 1.5, 2.75), ankle], 0.37, (u) => 1 - 0.2 * u);
-    add(tube);
-    const kneeBall = add(new THREE.SphereGeometry(0.4, 32, 24));
-    kneeBall.geometry.scale(1.05, 1, 1.05);
-    kneeBall.geometry.translate(knee.x, knee.y + 0.02, knee.z + 0.02);
-    const foot = new THREE.SphereGeometry(0.36, 32, 24);
-    foot.scale(0.95, 0.62, 1.45);
-    foot.translate(s * 0.78, 0.24, 3.2);
-    add(foot);
-    legs.push({ knee });
-  }
-
-  // brazos: del costado a la parte delantera de las rodillas
-  for (const s of [-1, 1]) {
-    const shoulder = surface(0.5, s > 0 ? 0.15 : Math.PI - 0.15).multiplyScalar(1).add(new THREE.Vector3(-s * 0.15, 0, 0));
-    const pts = [
-      shoulder,
-      new THREE.Vector3(s * 1.85, 2.75, 1.0),
-      new THREE.Vector3(s * 1.55, 2.0, 2.4),
-      new THREE.Vector3(s * 0.62, 1.7, 2.85),
-    ];
-    const { tube } = limbGeometry(pts, 0.2);
-    add(tube);
-    const hand = new THREE.SphereGeometry(0.27, 32, 24);
-    hand.scale(1.15, 1, 0.9);
-    hand.translate(pts[3].x, pts[3].y, pts[3].z);
-    add(hand);
-    const sh = new THREE.SphereGeometry(0.2, 24, 16);
-    sh.translate(shoulder.x, shoulder.y, shoulder.z);
-    add(sh);
-  }
-
-  // ---------- cara ----------
-  const FACE_T = 0.665;
-  const faceMat = new THREE.MeshStandardMaterial({ color: '#0d0d0d', roughness: 0.35 });
-  const placeOnSurface = (mesh, t, th, lift = 0.0) => {
-    const f = surfaceFrame(t, th);
-    const m = new THREE.Matrix4().makeBasis(f.u, f.v, f.n);
-    mesh.quaternion.setFromRotationMatrix(m);
+  // ---------- cara: dos puntos negros y una raya (siempre igual) ----------
+  const FACE_T = 0.715; // altura de los ojos (≈4,4 cm)
+  const faceMat = new THREE.MeshStandardMaterial({ color: '#0e0e0e', roughness: 0.4 });
+  const frameAt = (t, th) => {
+    const e = 1e-3;
+    const p = bodySurface(t, th);
+    const u = bodySurface(t, th + e).sub(bodySurface(t, th - e)).normalize();
+    const v = bodySurface(t + e, th).sub(bodySurface(t - e, th)).normalize();
+    const n = new THREE.Vector3().crossVectors(u, v).normalize();
+    // que la normal apunte hacia fuera del eje
+    const axis = new THREE.Vector3(0, p.y, spineZ(t));
+    if (n.dot(p.clone().sub(axis)) < 0) n.negate();
+    // base ortonormal: u horizontal sobre la superficie, v "hacia arriba"
+    const uu = new THREE.Vector3().crossVectors(v, n).normalize();
+    const vv = new THREE.Vector3().crossVectors(n, uu).normalize();
+    return { p, u: uu, v: vv, n };
+  };
+  const place = (mesh, t, th, lift) => {
+    const f = frameAt(t, th);
+    mesh.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(f.u, f.v, f.n));
     mesh.position.copy(f.p).addScaledVector(f.n, lift);
   };
   const eyes = [-1, 1].map((s) => {
-    const e = new THREE.Mesh(new THREE.SphereGeometry(0.15, 24, 16), faceMat);
-    e.scale.set(1, 1, 0.45);
+    const e = new THREE.Mesh(new THREE.SphereGeometry(0.125, 24, 16), faceMat);
     e.userData.s = s;
     fig.add(e);
     return e;
   });
-  const sparkleMat = new THREE.MeshBasicMaterial({ color: '#ffffff' });
-  const sparkles = eyes.map((e) => { const sp = new THREE.Mesh(new THREE.SphereGeometry(0.05, 12, 8), sparkleMat); fig.add(sp); return sp; });
-
-  const mouthLine = new THREE.Mesh(new THREE.CapsuleGeometry(0.065, 0.42, 8, 16).rotateZ(Math.PI / 2), faceMat);
-  mouthLine.scale.set(1, 1, 0.6);
-  const mouthO = new THREE.Mesh(new THREE.SphereGeometry(0.13, 24, 16), faceMat);
-  mouthO.scale.set(0.8, 1.05, 0.4);
-  const wavyPts = [];
-  for (let i = 0; i <= 24; i++) wavyPts.push(new THREE.Vector3(-0.3 + i * 0.025, Math.sin(i * 0.85) * 0.045, 0));
-  const mouthWavy = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(wavyPts), 64, 0.045, 10, false), faceMat);
-  for (const m of [mouthLine, mouthO, mouthWavy]) fig.add(m);
+  const mouth = new THREE.Mesh(new THREE.CapsuleGeometry(0.068, 0.74, 8, 16).rotateZ(Math.PI / 2), faceMat);
+  mouth.scale.set(1, 1, 0.55);
+  fig.add(mouth);
 
   // gota de sudor
-  const sweatMat = new THREE.MeshPhysicalMaterial({ color: '#8fd8ff', roughness: 0.05, transmission: 0.3, transparent: true, opacity: 0.92, clearcoat: 1 });
   const dropGeo = new THREE.SphereGeometry(0.2, 24, 16);
   {
     const p = dropGeo.attributes.position;
@@ -239,64 +280,50 @@ export async function createRenderer(canvas) {
     }
     dropGeo.computeVertexNormals();
   }
-  const sweat = new THREE.Mesh(dropGeo, sweatMat);
+  const sweat = new THREE.Mesh(dropGeo, new THREE.MeshPhysicalMaterial({ color: '#8fd8ff', roughness: 0.05, transparent: true, opacity: 0.92, clearcoat: 1 }));
   fig.add(sweat);
 
-  // ---------- cámara ----------
+  // ---------- cámara (misma vista 3/4 que la foto de producto) ----------
   const camera = new THREE.PerspectiveCamera(26, W / H, 0.1, 200);
-  const AZ = -0.7, EL = 0.2, D0 = 40;
+  const AZ = -0.8, EL = 0.24, D0 = 34;
   const camDir = new THREE.Vector3(Math.sin(AZ) * Math.cos(EL), Math.sin(EL), Math.cos(AZ) * Math.cos(EL));
-  const baseTarget = new THREE.Vector3(0.2, 3.3, 0.6);
-  const OFFSET0 = -430; // empuja el plátano a la mitad de abajo del encuadre
-  const OFFSET_ZOOM = -70;
+  const baseTarget = new THREE.Vector3(0.2, 3.4, 0.6);
+  const OFFSET0 = -400;
+  const OFFSET_ZOOM = -40;
 
   function layoutFace(s) {
-    const th = FRONT + s.lookX * 0.13;
-    const tt = FACE_T - s.lookY * 0.03;
-    const sep = 0.36;
-    eyes.forEach((e, i) => {
-      placeOnSurface(e, tt + 0.04 + (e.userData.s > 0 ? 0.004 : 0), th + e.userData.s * sep, 0.01);
-      const sc = s.eyeScale;
-      e.scale.set(sc, sc * (1 - s.blink * 0.85), 0.45 * sc);
-      const sp = sparkles[i];
-      sp.visible = s.eyeScale > 1.2 && s.blink < 0.5;
-      sp.position.copy(e.position).add(new THREE.Vector3(-0.05, 0.06, 0).applyQuaternion(e.quaternion).multiplyScalar(sc)).addScaledVector(new THREE.Vector3(0, 0, 1).applyQuaternion(e.quaternion), 0.06 * sc);
-    });
-    mouthLine.visible = s.mouth === 'line';
-    mouthO.visible = s.mouth === 'o';
-    mouthWavy.visible = s.mouth === 'wavy';
-    for (const m of [mouthLine, mouthO, mouthWavy]) placeOnSurface(m, tt - 0.045, th + 0.02, 0.012);
-    mouthLine.rotateZ(0.12);
+    const th = FRONT - s.lookX * 0.05;
+    const tt = FACE_T - s.lookY * 0.012;
+    const sep = 0.33; // ≈0,72 cm entre ojos
+    for (const e of eyes) {
+      place(e, tt, th - e.userData.s * sep, 0.0);
+      e.scale.set(1, 1 - s.blink * 0.85, 0.5);
+    }
+    place(mouth, tt - 0.052, th, 0.0);
   }
 
   return {
     render(s) {
-      // color (amarillo -> verde)
-      bodyMat.color.copy(YELLOW).lerp(GREEN, s.green);
-
-      // pose global: balanceo, respiración, girarse hacia cámara
-      fig.rotation.set(s.rock, AZ * s.turn, s.rock * 0.35, 'YXZ');
+      // pose: balanceo, respiración, girarse hacia cámara, echarse atrás al mirar arriba
+      fig.rotation.set(s.rock * 0.8 - s.lean * 0.05, AZ * 0.9 * s.turn, s.rock * 0.35, 'YXZ');
       fig.scale.set(1 - s.breath * 0.5, 1 + s.breath, 1 - s.breath * 0.5);
-
       layoutFace(s);
 
-      // sudor
       sweat.visible = s.sweat >= 0;
-      if (sweat.visible) placeOnSurface(sweat, 0.8 - s.sweat * 0.22, FRONT - 0.95, 0.12);
-      sweat.rotation.z += 0; // la gota mira hacia arriba
-      if (sweat.visible) { sweat.quaternion.identity(); sweat.position.copy(surfaceFrame(0.8 - s.sweat * 0.22, FRONT - 0.95).p).addScaledVector(surfaceFrame(0.8 - s.sweat * 0.22, FRONT - 0.95).n, 0.14); }
+      if (sweat.visible) {
+        const f = frameAt(0.8 - s.sweat * 0.2, FRONT + 0.75);
+        sweat.quaternion.identity();
+        sweat.position.copy(f.p).addScaledVector(f.n, 0.12);
+      }
 
-      // cámara: plano general <-> primerísimo plano de la cara
       fig.updateMatrixWorld(true);
-      const faceWorld = surface(FACE_T, FRONT).applyMatrix4(fig.matrixWorld);
+      const faceWorld = bodySurface(FACE_T - 0.025, FRONT).applyMatrix4(fig.matrixWorld);
       const f = s.zoomFocus;
       const target = baseTarget.clone().lerp(faceWorld, f);
-      const dist = D0 / s.zoom;
-      camera.position.copy(target).addScaledVector(camDir, dist);
+      camera.position.copy(target).addScaledVector(camDir, D0 / Math.pow(s.zoom, 0.88));
       camera.lookAt(target);
       camera.setViewOffset(W, H, -s.shake.x, OFFSET0 + (OFFSET_ZOOM - OFFSET0) * f - s.shake.y, W, H);
       camera.updateProjectionMatrix();
-
       renderer.render(scene, camera);
     },
   };

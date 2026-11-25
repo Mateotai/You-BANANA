@@ -37,8 +37,8 @@ export const BEATS = {
   zoom1: 6.8,
   zoom2: 7.2,
   zoom3: 7.6,
-  greenStart: 8.2,
-  cutBack: 9.6, // vuelve el plano general, ya verde
+  closeBlink: 8.7, // tras los BOOM: silencio... y un parpadeo lento
+  cutBack: 9.6, // vuelve el plano general
   rockStart: 9.8,
   rockEnd: 12.8,
   replay: 13.2, // ...y le vuelve a dar al play
@@ -50,6 +50,7 @@ const BLINKS = [
   [0.7, 0.16],
   [2.6, 0.16],
   [5.15, 0.45], // parpadeo lento y juzgón mientras mira a cámara
+  [8.7, 0.5], // parpadeo lento en primerísimo plano, después de los BOOM
   [11.3, 0.2],
   [14.6, 0.16],
   [14.9, 0.16],
@@ -111,17 +112,16 @@ export function getState(t) {
   // ----- parpadeo -----
   s.blink = Math.max(...BLINKS.map(([bt, d]) => pulse(bt, d, t)));
 
-  // ----- ojos / boca -----
+  // La cara NO cambia nunca (dos puntos y una raya, como la figura):
+  // el chiste es justo esa cara de póker, incluso en el zoom dramático.
   const shocked = t >= B.zoom1 && t < B.cutBack;
-  const traumatized = t >= B.cutBack && t < B.rockEnd;
-  s.eyeScale = shocked ? 1.5 : traumatized ? 0.75 : 1;
-  s.mouth = shocked ? 'o' : traumatized ? 'wavy' : 'line';
 
-  // ----- color: se pone verde del asco y luego "madura" otra vez -----
-  s.green = smooth(B.greenStart, B.cutBack - 0.2, t) * (1 - smooth(B.rockEnd - 0.2, B.rockEnd + 1.0, t));
+  // se echa un poco hacia atrás cuando mira la pantalla (que está encima)
+  s.lean = clamp(-lookY);
 
   // ----- gota de sudor -----
-  s.sweat = t >= B.greenStart + 0.2 && t < B.rockEnd ? clamp((t - (B.greenStart + 0.2)) / (B.rockEnd - B.greenStart - 0.2)) : -1;
+  const sweatStart = B.closeBlink + 0.35;
+  s.sweat = t >= sweatStart && t < B.rockEnd ? clamp((t - sweatStart) / (B.rockEnd - sweatStart)) : -1;
 
   // ----- balanceo abrazando las rodillas (modo trauma) -----
   const rockEnv = window4(B.rockStart, B.rockStart + 0.5, B.rockEnd - 0.5, B.rockEnd, t);
