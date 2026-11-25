@@ -1,7 +1,10 @@
 // Genera la pista de efectos de sonido (WAV mono 44.1 kHz) sincronizada con el guion.
-// Uso: node scripts/sfx.mjs out/sfx.wav
+// Uso: node scripts/sfx.mjs out/sfx.wav ['{"shock":9.9,...}']  (plan opcional, en JSON)
 import fs from 'fs';
-import { SFX_CUES, DURATION } from '../src/timeline.js';
+import * as TL from '../src/timeline.js';
+
+if (process.argv[3]) TL.setPlan(JSON.parse(process.argv[3]));
+const { SFX_CUES, DURATION } = TL;
 
 const SR = 44100;
 const out = new Float32Array(Math.ceil(SR * (DURATION + 0.5)));

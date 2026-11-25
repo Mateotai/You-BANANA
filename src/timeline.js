@@ -2,7 +2,6 @@
 // Todo es una función pura del tiempo t (segundos) -> estado de la escena,
 // así cada frame se puede renderizar de forma determinista.
 
-export const DURATION = 16;
 export const FPS = 30;
 
 // ---------- utilidades ----------
@@ -28,48 +27,78 @@ const popIn = (t0, t) => {
 };
 
 // ---------- momentos clave (segundos) ----------
-export const BEATS = {
-  lookUp: 1.0, // empieza a mirar el video
-  glance: 4.0, // mira a cámara (rompe la cuarta pared)
-  bubble: 4.6, // "..."
-  backToVideo: 5.8,
-  shock: 6.6, // pasa algo en el video
-  zoom1: 6.8,
-  zoom2: 7.2,
-  zoom3: 7.6,
-  closeBlink: 8.7, // tras los BOOM: silencio... y un parpadeo lento
-  cutBack: 9.6, // vuelve el plano general
-  rockStart: 9.8,
-  rockEnd: 12.8,
-  replay: 13.2, // ...y le vuelve a dar al play
-  finalGlance: 14.2,
-  finalBack: 15.4,
-};
+// Un "plan" fija los pocos momentos que dependen del video viral; el resto se deriva.
+//   lookUp:      empieza a mirar la pantalla
+//   glance:      mira a cámara con "..." (rompe la cuarta pared)
+//   glance2:     (opcional) mirada rápida a cámara, tipo "doble toma"
+//   shock:       el momento fuerte del viral -> zoom dramático
+//   rockDur:     cuánto dura el balanceo "traumatizado"
+//   videoStart:  cuándo empieza a sonar/verse el viral; videoLength: cuánto dura
+export const DEFAULT_PLAN = { lookUp: 1.0, glance: 4.0, glance2: null, shock: 6.6, rockDur: 3.0, videoStart: 1.0, videoLength: 13.5 };
+export let PLAN = { ...DEFAULT_PLAN };
+export let BEATS = {};
+export let BLINKS = [];
+export let SFX_CUES = [];
+export let DURATION = 16;
 
-const BLINKS = [
-  [0.7, 0.16],
-  [2.6, 0.16],
-  [5.15, 0.45], // parpadeo lento y juzgón mientras mira a cámara
-  [8.7, 0.5], // parpadeo lento en primerísimo plano, después de los BOOM
-  [11.3, 0.2],
-  [14.6, 0.16],
-  [14.9, 0.16],
-];
+export function setPlan(p = {}) {
+  PLAN = { ...DEFAULT_PLAN, ...p };
+  if (p.videoStart === undefined) PLAN.videoStart = PLAN.lookUp;
+  const P = PLAN;
+  const B = {
+    lookUp: P.lookUp,
+    glance: P.glance,
+    bubble: P.glance + 0.6, // "..."
+    backToVideo: P.glance + 1.8,
+    glance2: P.glance2,
+    shock: P.shock, // pasa algo en el video
+    zoom1: P.shock + 0.2,
+    zoom2: P.shock + 0.6,
+    zoom3: P.shock + 1.0,
+    closeBlink: P.shock + 2.1, // tras los BOOM: silencio... y un parpadeo lento
+    cutBack: P.shock + 3.0, // vuelve el plano general
+  };
+  B.rockStart = B.cutBack + 0.2;
+  B.rockEnd = B.rockStart + P.rockDur;
+  B.replay = B.rockEnd + 0.4; // ...y le vuelve a dar al play
+  B.finalGlance = B.replay + 1.0;
+  B.finalBack = B.replay + 2.2;
+  BEATS = B;
+  DURATION = Math.round((B.replay + 2.8) * 10) / 10;
+  BLINKS = [
+    [B.lookUp - 0.3, 0.16],
+    [B.lookUp + 1.6, 0.16],
+    [B.glance + 1.15, 0.45], // parpadeo lento y juzgón mientras mira a cámara
+    [B.closeBlink, 0.5], // parpadeo lento en primerísimo plano, después de los BOOM
+    [B.rockStart + 1.5, 0.2],
+    [B.finalGlance + 0.4, 0.16],
+    [B.finalGlance + 0.7, 0.16],
+  ].filter(([bt]) => bt >= 0.2);
+  // efectos de sonido sincronizados (los usa scripts/sfx.mjs)
+  SFX_CUES = [
+    ...BLINKS.map(([t, d]) => ({ t, type: 'blink', gain: d > 0.3 ? 0.5 : 0.35 })),
+    { t: B.glance, type: 'tick', gain: 0.5 },
+    { t: B.bubble, type: 'pop', gain: 0.7 },
+    ...(B.glance2 != null ? [{ t: B.glance2, type: 'tick', gain: 0.5 }] : []),
+    { t: B.shock, type: 'scratch', gain: 0.8 },
+    { t: B.zoom1, type: 'boom', gain: 0.55 },
+    { t: B.zoom2, type: 'boom', gain: 0.75 },
+    { t: B.zoom3, type: 'boom', gain: 1.0 },
+    { t: B.cutBack - 0.08, type: 'whoosh', gain: 0.7 },
+    { t: B.rockStart + 0.1, type: 'sad', gain: 0.55 },
+    { t: B.replay, type: 'rewind', gain: 0.6 },
+    { t: B.finalGlance, type: 'tick', gain: 0.5 },
+  ];
+  return PLAN;
+}
+setPlan();
 
-// efectos de sonido sincronizados (los usa scripts/sfx.mjs)
-export const SFX_CUES = [
-  ...BLINKS.map(([t, d]) => ({ t, type: 'blink', gain: d > 0.3 ? 0.5 : 0.35 })),
-  { t: BEATS.glance, type: 'tick', gain: 0.5 },
-  { t: BEATS.bubble, type: 'pop', gain: 0.7 },
-  { t: BEATS.shock, type: 'scratch', gain: 0.8 },
-  { t: BEATS.zoom1, type: 'boom', gain: 0.55 },
-  { t: BEATS.zoom2, type: 'boom', gain: 0.75 },
-  { t: BEATS.zoom3, type: 'boom', gain: 1.0 },
-  { t: BEATS.cutBack - 0.08, type: 'whoosh', gain: 0.7 },
-  { t: BEATS.rockStart + 0.1, type: 'sad', gain: 0.55 },
-  { t: BEATS.replay, type: 'rewind', gain: 0.6 },
-  { t: BEATS.finalGlance, type: 'tick', gain: 0.5 },
-];
+// segundo del viral que se ve en el instante t (con el replay del final)
+export function videoTimeAt(t) {
+  const B = BEATS, P = PLAN;
+  if (t < B.replay) return clamp(t - P.videoStart, 0, P.videoLength);
+  return clamp(t - (B.replay + 0.5), 0, P.videoLength);
+}
 
 // Sacudida pseudo-aleatoria pero determinista
 function shakeAt(t, amp) {
@@ -93,11 +122,15 @@ export function getState(t) {
   lookY -= smooth(B.rockEnd, B.rockEnd + 0.4, t); // vuelve a mirar el video
   lookY += smooth(B.finalGlance, B.finalGlance + 0.2, t);
   lookY -= smooth(B.finalBack, B.finalBack + 0.3, t);
+  // doble toma: mirada rapidísima a cámara y vuelta al video
+  const g2 = B.glance2 != null ? window4(B.glance2, B.glance2 + 0.1, B.glance2 + 0.55, B.glance2 + 0.75, t) : 0;
+  lookY += g2;
   s.lookY = lookY;
 
   // lookX: sigue "la acción" del video
   let lookX = 0;
   lookX += 0.4 * Math.sin((t - B.lookUp) * 2.3) * window4(B.lookUp + 0.3, B.lookUp + 0.8, B.glance - 0.2, B.glance, t);
+  lookX += 0.3 * Math.sin((t - B.backToVideo) * 2.0) * window4(B.backToVideo + 0.4, B.backToVideo + 0.9, B.shock - 0.3, B.shock, t) * (1 - g2);
   lookX += 0.3 * Math.sin((t - B.replay) * 2.6) * window4(B.replay + 0.2, B.replay + 0.5, B.finalGlance - 0.1, B.finalGlance, t);
   s.lookX = lookX;
 
@@ -107,6 +140,7 @@ export function getState(t) {
   turn += window4(B.zoom1 - 0.05, B.zoom1, B.cutBack, B.cutBack + 0.01, t);
   turn += 0.45 * window4(B.cutBack, B.cutBack + 0.01, B.rockEnd, B.rockEnd + 0.4, t);
   turn += window4(B.finalGlance, B.finalGlance + 0.3, B.finalBack, B.finalBack + 0.35, t);
+  turn += 0.7 * g2;
   s.turn = turn;
 
   // ----- parpadeo -----
@@ -161,9 +195,8 @@ export function getState(t) {
 
   // ----- pantalla del video -----
   const v = {};
-  if (t < B.replay) v.progress = clamp((t - B.lookUp) / 13.5, 0, 0.93);
-  else v.progress = clamp((t - B.replay - 0.6) / 13.5, 0, 1);
-  v.playing = t >= B.lookUp;
+  v.time = videoTimeAt(t);
+  v.progress = v.time / PLAN.videoLength;
   v.flash = t >= B.shock ? Math.exp(-(t - B.shock) * 9) * (t < B.cutBack ? 1 : 0) : 0;
   v.shake = t >= B.shock && t < B.zoom1 + 0.1 ? shakeAt(t, 16) : { x: 0, y: 0 };
   v.hidden = shocked ? 1 : 0;

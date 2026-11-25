@@ -1,0 +1,16 @@
+{
+  "name": "novio",
+  "video": "videos/novio.mp4",
+  "trimStart": 0,
+  "trimEnd": 12.25,
+  "fit": "cover",
+  "focusY": 0.6,
+  "timeline": {
+    "lookUp": 0.2,
+    "videoStart": 0,
+    "glance": 3.4,
+    "glance2": 7.4,
+    "shock": 9.9,
+    "rockDur": 2.4
+  }
+}

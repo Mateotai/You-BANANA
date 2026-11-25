@@ -47,6 +47,15 @@ El chiste de este personaje es su **cara de póker**: dos puntos y una raya. As�
 4. Pon el texto (por ejemplo "POV: el plátano ve…") **dentro de la zona del video**, arriba, para no tapar al plátano.
 5. **2D vs 3D:** el 3D se parece más a la figura y destaca en el feed. El 2D es más rápido de producir en serie y se entiende mejor en miniatura. Una buena estrategia: el 3D como "personaje principal" del canal y el 2D para stickers o miniaturas.
 
+## Meter un video viral de verdad
+
+```bash
+node scripts/render.cjs --mode 3d --plan reactions/novio.json
+```
+
+El viral se ve dentro de la pantalla, sincronizado con el guion y con su audio mezclado con los efectos.
+Instrucciones en [`reactions/README.md`](reactions/README.md).
+
 ## Pantalla de croma (opcional, para meter el video de verdad)
 
 ```bash

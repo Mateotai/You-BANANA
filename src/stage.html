@@ -40,6 +40,13 @@
   }
   #videoLabel small { display: block; font-size: 34px; letter-spacing: 6px; font-weight: 600; opacity: .45; margin-top: 8px; }
   #flash { position: absolute; inset: 0; background: #fff; opacity: 0; }
+  /* video real: nítido encajado + el mismo desenfocado de fondo para rellenar */
+  .vid { position: absolute; inset: 0; width: 100%; height: 100%; display: none; }
+  #vidBg { object-fit: cover; filter: blur(28px) brightness(.55) saturate(1.2); transform: scale(1.15); }
+  #vidFg { object-fit: contain; }
+  #screen.has-video .vid { display: block; }
+  #screen.has-video #videoLabel, #screen.has-video #live { display: none; }
+  #screen.fit-cover #vidFg { object-fit: cover; }
   #bar { position: absolute; left: 34px; right: 34px; bottom: 30px; height: 10px; border-radius: 6px; background: rgba(255,255,255,.22); }
   #barFill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: 6px; background: #ff3b30; }
   #barKnob { position: absolute; top: 50%; width: 26px; height: 26px; margin: -13px 0 0 -13px; border-radius: 50%; background: #ff3b30; left: 0; }
@@ -66,6 +73,7 @@
   <div id="vignette"></div>
   <div id="screenWrap"><div id="screen">
     <div id="live">▶ viral</div>
+    <img id="vidBg" class="vid" alt=""><img id="vidFg" class="vid" alt="">
     <div id="videoLabel">VIDEO<small>aquí va el video viral</small></div>
     <div id="bar"><div id="barFill"></div><div id="barKnob"></div></div>
     <div id="flash"></div>
@@ -74,8 +82,20 @@
   <div id="bubble">...</div>
 </div>
 <script type="module">
-  import { getState, DURATION, FPS } from './timeline.js';
+  import * as TL from './timeline.js';
+  const { getState, FPS } = TL;
   const params = new URLSearchParams(location.search);
+  // ?plan={...}: tiempos del guion sincronizados con un viral concreto
+  if (params.get('plan')) TL.setPlan(JSON.parse(params.get('plan')));
+  const DURATION = TL.DURATION;
+  // ?frames=/ruta/&nframes=N: fotogramas del viral (los extrae scripts/render.cjs)
+  const FRAMES = params.get('frames'), NFRAMES = +params.get('nframes') || 0;
+  if (FRAMES) {
+    document.getElementById('screen').classList.add('has-video');
+    if (params.get('fit') === 'cover') document.getElementById('screen').classList.add('fit-cover');
+    // qué altura del viral queda en el centro al recortar (0 = arriba, 1 = abajo)
+    if (params.get('focusY')) document.getElementById('vidFg').style.objectPosition = `50% ${(+params.get('focusY') * 100).toFixed(1)}%`;
+  }
   const mode = params.get('mode') || '2d';
   if (params.get('screen') === 'green') document.getElementById('screen').classList.add('green');
   // ?ref=1 : sólo la figura sobre fondo blanco, con la vista de la foto de producto (para comparar)
@@ -104,13 +124,25 @@
     else b.style.transform = 'scale(0)';
   }
 
+  let lastSrc = '';
+  async function showVideoFrame(vt) {
+    const i = Math.min(NFRAMES, Math.floor(vt * FPS + 1e-6) + 1);
+    const src = FRAMES + String(i).padStart(5, '0') + '.jpg';
+    if (src === lastSrc) return;
+    lastSrc = src;
+    const fg = $('vidFg'), bg = $('vidBg');
+    fg.src = src; bg.src = src;
+    await Promise.all([fg.decode(), bg.decode()]).catch(() => {});
+  }
+
   window.renderFrame = async (t) => {
     const s = getState(t);
+    if (FRAMES) await showVideoFrame(s.video.time);
     renderOverlay(s);
     await renderer.render(s, t);
     return true;
   };
-  window.META = { DURATION, FPS, mode };
+  window.META = { DURATION, FPS, mode, BEATS: TL.BEATS };
   await document.fonts.ready;
   await window.renderFrame(0);
   window.READY = true;
