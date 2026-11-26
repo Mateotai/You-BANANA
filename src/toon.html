@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>You-BANANA toon</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Rubik:wght@600;800&display=swap');
+  html, body { margin: 0; background: #000; }
+  canvas { display: block; width: 1080px; height: 1920px; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script type="module">
+  import { buildShow, stateAt, drawShow, FPS } from './toon-show.js';
+  // ?cfg={format, items:[{kind, len, frames, n, focusY, text}]}
+  const params = new URLSearchParams(location.search);
+  const cfg = JSON.parse(params.get('cfg') || '{"format":"sofa","items":[{"kind":"placeholder","text":"VIDEO 1","len":4},{"kind":"placeholder","text":"VIDEO 2","len":4}]}');
+  const sh = buildShow(cfg);
+  const ctx = document.getElementById('c').getContext('2d');
+  const img = new Image();
+  let lastSrc = '';
+  async function frameFor(s) {
+    const it = s.item >= 0 ? sh.items[s.item] : null;
+    if (!it || !it.frames) return null;
+    const i = Math.min(it.n, Math.floor(s.videoTime * FPS + 1e-6) + 1);
+    const src = it.frames + String(i).padStart(5, '0') + '.jpg';
+    if (src !== lastSrc) { lastSrc = src; img.src = src; await img.decode().catch(() => {}); }
+    return img;
+  }
+  window.renderFrame = async (t) => {
+    const s = stateAt(sh, t);
+    const fi = s.playing >= 0 ? await frameFor({ item: s.playing, videoTime: s.videoTime }) : null;
+    drawShow(ctx, sh, s, fi);
+    return true;
+  };
+  window.META = { DURATION: sh.duration, FPS, cues: sh.cues, plays: sh.plays };
+  await document.fonts.ready;
+  await window.renderFrame(0);
+  window.READY = true;
+  if (params.get('play')) {
+    const t0 = performance.now();
+    const loop = async () => { await window.renderFrame(((performance.now() - t0) / 1000) % sh.duration); requestAnimationFrame(loop); };
+    loop();
+  }
+</script>
+</body>
+</html>

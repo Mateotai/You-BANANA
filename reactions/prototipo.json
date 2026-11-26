@@ -1,0 +1,7 @@
+{
+  "name": "prototipo",
+  "videos": [
+    { "video": "videos/novio.mp4", "trimStart": 0, "trimEnd": 12.25, "focusY": 0.55 },
+    { "placeholder": "VIDEO 2", "duration": 4 }
+  ]
+}
