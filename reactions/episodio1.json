@@ -1,0 +1,9 @@
+{
+  "name": "episodio1",
+  "react": 1.5,
+  "videos": [
+    { "video": "videos/novio.mp4", "trimStart": 0, "trimEnd": 12.25, "focusY": 0.55 },
+    { "placeholder": "VIDEO 2", "duration": 4 },
+    { "placeholder": "VIDEO 3", "duration": 4 }
+  ]
+}

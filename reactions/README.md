@@ -26,3 +26,22 @@ node scripts/render.cjs --mode 2d --plan reactions/novio.json   # -> out/banana-
 
 El resto del guion se calcula solo a partir de estos tiempos: parpadeos, sudor, replay final y duración total.
 Al final, el plátano le da al replay y el viral vuelve a empezar, así que el video queda en bucle.
+
+## Programa en cadena (`render-show.cjs`)
+
+`episodio1.json` es una lista de videos que se reproducen uno detrás de otro:
+
+```json
+{
+  "name": "episodio1",
+  "react": 1.5,
+  "videos": [
+    { "video": "videos/novio.mp4", "trimStart": 0, "trimEnd": 12.25, "focusY": 0.55 },
+    { "placeholder": "VIDEO 2", "duration": 4 }
+  ]
+}
+```
+
+- `react`: segundos de reacción (U invertida) entre un video y el siguiente.
+- `focusY`: qué altura del viral queda en el centro al llenar la pantalla.
+- `volume`: volumen de cada viral (1.6 por defecto).

@@ -3,8 +3,14 @@
 import fs from 'fs';
 import * as TL from '../src/timeline.js';
 
-if (process.argv[3]) TL.setPlan(JSON.parse(process.argv[3]));
-const { SFX_CUES, DURATION } = TL;
+// argumento 3: un plan en JSON, o un archivo .json con { duration, cues } (render-show.cjs)
+let SFX_CUES = TL.SFX_CUES, DURATION = TL.DURATION;
+if (process.argv[3] && process.argv[3].endsWith('.json') && fs.existsSync(process.argv[3])) {
+  ({ cues: SFX_CUES, duration: DURATION } = JSON.parse(fs.readFileSync(process.argv[3], 'utf8')));
+} else if (process.argv[3]) {
+  TL.setPlan(JSON.parse(process.argv[3]));
+  ({ SFX_CUES, DURATION } = TL);
+}
 
 const SR = 44100;
 const out = new Float32Array(Math.ceil(SR * (DURATION + 0.5)));
@@ -26,6 +32,18 @@ function osc(freqFn, shape = Math.sin) {
 const saw = (ph) => ((ph / Math.PI) % 2) - 1;
 
 const SYNTH = {
+  // paso suave (pie de goma)
+  step: (t0, g) => { let lp = 0; const o = osc((t) => 150 - t * 600); add(t0, 0.07, (t) => { lp += 0.3 * (rnd() - lp); return (0.7 * o(t) + 0.5 * lp) * Math.exp(-t * 60); }, 0.35 * g); },
+  // salto al sofá: "boing" que sube
+  boing: (t0, g) => { const o = osc((t) => 220 + 420 * t / 0.3 + 30 * Math.sin(t * 90)); add(t0, 0.3, (t) => o(t) * Math.sin(Math.PI * t / 0.3), 0.35 * g); },
+  // aterriza en el cojín
+  thud: (t0, g) => { let lp = 0; const o = osc((t) => 90 - t * 120); add(t0, 0.18, (t) => { lp += 0.15 * (rnd() - lp); return (o(t) + lp) * Math.exp(-t * 22); }, 0.6 * g); },
+  // "womp": nota grave que cae (la cara de U invertida)
+  womp: (t0, g) => {
+    const o = osc((t) => 180 * Math.pow(0.55, t / 0.45), saw);
+    let lp = 0;
+    add(t0, 0.5, (t) => { lp += 0.12 * (o(t) - lp); return lp * Math.min(1, t / 0.02) * Math.exp(-t * 3.5); }, 0.9 * g);
+  },
   // parpadeo: "tic" agudo y suave
   blink: (t0, g) => { const o = osc(() => 2400); add(t0, 0.04, (t) => o(t) * Math.exp(-t * 120), 0.25 * g); },
   tick: (t0, g) => { const o = osc((t) => 1500 - t * 8000); add(t0, 0.06, (t) => o(t) * Math.exp(-t * 70), 0.35 * g); },

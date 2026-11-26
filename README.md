@@ -47,6 +47,23 @@ El chiste de este personaje es su **cara de póker**: dos puntos y una raya. As�
 4. Pon el texto (por ejemplo "POV: el plátano ve…") **dentro de la zona del video**, arriba, para no tapar al plátano.
 5. **2D vs 3D:** el 3D se parece más a la figura y destaca en el feed. El 2D es más rápido de producir en serie y se entiende mejor en miniatura. Una buena estrategia: el 3D como "personaje principal" del canal y el 2D para stickers o miniaturas.
 
+## Programa de reacciones en cadena (plátano 2D que anda, se sienta y se levanta)
+
+El plátano 2D tiene brazos y piernas articulados (`src/banana-rig.js`), con el mismo cuerpo, tallo y cara del calco.
+Al acabar cada video pone la boca en **U invertida (∩)** y pasa al siguiente. Hay dos formatos:
+
+| Formato | Cómo es |
+|---|---|
+| `sofa` | El viral ocupa **toda la mitad de arriba**. Abajo, el plátano llega andando, se sube al sofá y lo mira. Al acabar cada video mira a cámara con la U invertida y entra el siguiente. |
+| `pie` | El plátano, de pie, ocupa toda la pantalla mirando a un lado. Se gira y **el viral sale a pantalla completa**. Al acabar vuelve el plátano, pone la U invertida, se gira al otro lado y entra el siguiente. |
+
+```bash
+node scripts/render-show.cjs reactions/episodio1.json --format sofa   # -> out/show-episodio1-sofa.mp4
+node scripts/render-show.cjs reactions/episodio1.json --format pie    # -> out/show-episodio1-pie.mp4
+```
+
+En `reactions/episodio1.json` pones la lista de videos, en orden. Los que aún no tienes pueden ser marcadores (`"placeholder": "VIDEO 2"`).
+
 ## Meter un video viral de verdad
 
 ```bash
