@@ -2,6 +2,7 @@
 // Uso:
 //   node scripts/render-show.cjs reactions/episodio.json --format sofa   -> out/show-<nombre>-sofa.mp4
 //   node scripts/render-show.cjs reactions/episodio.json --format pie    -> out/show-<nombre>-pie.mp4
+//   node scripts/render-show.cjs reactions/episodio.json --format pie3d  -> 3D, con pandilla de plátanos
 //   ... --still 1,5.5,20   (sólo fotogramas sueltos en PNG)
 const { chromium } = require('playwright');
 const http = require('http'), fs = require('fs'), path = require('path');
@@ -42,13 +43,14 @@ const server = http.createServer((req, res) => {
 
 (async () => {
   await new Promise((r) => server.listen(0, r));
-  const browser = await chromium.launch();
+  const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
   const page = await browser.newPage({ viewport: { width: 1080, height: 1920 } });
   page.on('pageerror', (e) => console.error('[page error]', e));
-  await page.goto(`http://localhost:${server.address().port}/src/show.html?cfg=${encodeURIComponent(JSON.stringify(cfg))}`);
-  await page.waitForFunction(() => window.READY === true, null, { timeout: 60000 });
+  const pageFile = format === 'pie3d' ? 'show3d.html' : 'show.html';
+  await page.goto(`http://localhost:${server.address().port}/src/${pageFile}?cfg=${encodeURIComponent(JSON.stringify(cfg))}`);
+  await page.waitForFunction(() => window.READY === true, null, { timeout: 180000 });
   const META = await page.evaluate(() => window.META);
-  const canvas = await page.$('canvas');
+  const canvas = await page.$(format === 'pie3d' ? '#stage' : 'canvas');
   const still = opt('still');
   if (still) {
     for (const t of still.split(',').map(Number)) {

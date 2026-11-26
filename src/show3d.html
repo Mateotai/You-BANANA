@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>You-BANANA show 3D</title>
+<script type="importmap">
+{ "imports": { "three": "../node_modules/three/build/three.module.js", "three/addons/": "../node_modules/three/examples/jsm/" } }
+</script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Rubik:wght@600;800&display=swap');
+  html, body { margin: 0; background: #000; }
+  #stage { position: relative; width: 1080px; height: 1920px; overflow: hidden; font-family: Rubik, Arial, sans-serif; }
+  #gl { position: absolute; inset: 0; width: 1080px; height: 1920px; }
+  #vid, #ph { position: absolute; inset: 0; width: 1080px; height: 1920px; display: none; }
+  #vid { object-fit: cover; background: #000; }
+  #ph { background: #060606; color: #fff; text-align: center; padding-top: 820px; box-sizing: border-box; font-weight: 800; font-size: 170px; }
+  #ph small { display: block; font-size: 38px; font-weight: 600; opacity: .5; margin-top: 10px; }
+  #bubble {
+    position: absolute; padding: 22px 54px 40px; background: #fff; border-radius: 70px; font-weight: 800; font-size: 96px; color: #222;
+    line-height: 80px; transform-origin: 20% 100%; transform: scale(0); white-space: nowrap; box-shadow: 0 10px 0 rgba(0,0,0,.08);
+  }
+  #bubble::after { content: ''; position: absolute; left: 50px; bottom: -30px; border: 24px solid transparent; border-top: 34px solid #fff; border-left: 6px solid transparent; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="gl" width="1080" height="1920"></canvas>
+  <img id="vid" alt="">
+  <div id="ph"></div>
+  <div id="bubble">¡Ven!</div>
+</div>
+<script type="module">
+  import { buildShow, stateAt, createShow3D, FPS } from './show3d.js';
+  const params = new URLSearchParams(location.search);
+  const cfg = JSON.parse(params.get('cfg') || '{"items":[{"kind":"placeholder","text":"VIDEO 1","len":3},{"kind":"placeholder","text":"VIDEO 2","len":3},{"kind":"placeholder","text":"VIDEO 3","len":3}]}');
+  const sh = buildShow(cfg);
+  const show = await createShow3D(document.getElementById('gl'));
+  const $ = (id) => document.getElementById(id);
+  let lastSrc = '';
+  window.renderFrame = async (t) => {
+    const s = stateAt(sh, t);
+    const vid = $('vid'), ph = $('ph');
+    if (s.playing >= 0) {
+      const it = sh.items[s.playing];
+      if (it.frames) {
+        const i = Math.min(it.n, Math.floor(s.videoTime * FPS + 1e-6) + 1);
+        const src = it.frames + String(i).padStart(5, '0') + '.jpg';
+        vid.style.objectPosition = `50% ${((it.focusY ?? 0.5) * 100).toFixed(1)}%`;
+        if (src !== lastSrc) { lastSrc = src; vid.src = src; await vid.decode().catch(() => {}); }
+        vid.style.display = 'block'; ph.style.display = 'none';
+      } else {
+        ph.innerHTML = `${it.text || 'VIDEO'}<small>aquí va otro video viral</small>`;
+        ph.style.display = 'block'; vid.style.display = 'none';
+      }
+      $('bubble').style.transform = 'scale(0)';
+      return true; // el video tapa la escena: no hace falta dibujar el 3D
+    }
+    vid.style.display = 'none'; ph.style.display = 'none';
+    show.render(sh, s);
+    const b = $('bubble');
+    if (s.bubble) {
+      const p = show.headOnScreen(0);
+      b.textContent = s.bubble.text;
+      b.style.left = `${Math.round(p.x + (s.bubble.side > 0 ? 60 : -300))}px`;
+      b.style.top = `${Math.round(p.y - 230)}px`;
+      b.style.transform = `scale(${(1 + 0.2 * Math.sin(Math.PI * s.bubble.k) * (1 - s.bubble.k) ) * s.bubble.k})`;
+    } else b.style.transform = 'scale(0)';
+    return true;
+  };
+  window.META = { DURATION: sh.duration, FPS, cues: sh.cues, plays: sh.plays };
+  await document.fonts.ready;
+  await window.renderFrame(0);
+  window.READY = true;
+</script>
+</body>
+</html>

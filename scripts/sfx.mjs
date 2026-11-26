@@ -32,6 +32,14 @@ function osc(freqFn, shape = Math.sin) {
 const saw = (ph) => ((ph / Math.PI) % 2) - 1;
 
 const SYNTH = {
+  // silbido para llamar a otro plátano: "fiu-fiuuu"
+  whistle: (t0, g) => {
+    const notes = [[0, 0.16, 1500, 2100], [0.24, 0.34, 1300, 2300]];
+    for (const [st, d, f0, f1] of notes) {
+      const o = osc((t) => f0 + (f1 - f0) * Math.min(1, t / (d * 0.6)) + 25 * Math.sin(t * 40));
+      add(t0 + st, d, (t) => o(t) * Math.min(1, t / 0.02) * Math.min(1, (d - t) / 0.05), 0.28 * g);
+    }
+  },
   // paso suave (pie de goma)
   step: (t0, g) => { let lp = 0; const o = osc((t) => 150 - t * 600); add(t0, 0.07, (t) => { lp += 0.3 * (rnd() - lp); return (0.7 * o(t) + 0.5 * lp) * Math.exp(-t * 60); }, 0.35 * g); },
   // salto al sofá: "boing" que sube

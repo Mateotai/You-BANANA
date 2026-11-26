@@ -335,3 +335,6 @@ export async function createRenderer(canvas, opts = {}) {
     },
   };
 }
+
+// piezas que reutiliza el programa 3D (src/show3d.js)
+export { HB, FRONT, TOP_C, TOP_N, bodySD, bodySurface, polygonize, plaMaterial };

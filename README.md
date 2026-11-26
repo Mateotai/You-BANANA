@@ -57,7 +57,10 @@ Al acabar cada video pone la boca en **U invertida (∩)** y pasa al siguiente. 
 | `sofa` | El viral ocupa **toda la mitad de arriba**. Abajo, el plátano llega andando, se sube al sofá y lo mira. Al acabar cada video mira a cámara con la U invertida y entra el siguiente. |
 | `pie` | El plátano, de pie, ocupa toda la pantalla mirando a un lado. Se gira y **el viral sale a pantalla completa**. Al acabar vuelve el plátano, pone la U invertida, se gira al otro lado y entra el siguiente. |
 
+| `pie3d` | Como `pie`, pero **en 3D y con pandilla**. Al acabar cada video, todos ponen la U invertida a la vez. Luego el amarillo saluda con un "¡Ven!" y llega andando otro plátano de otro color (rosa, azul, verde, morado...) a ver el siguiente video. |
+
 ```bash
+node scripts/render-show.cjs reactions/episodio1.json --format pie3d  # -> out/show-episodio1-pie3d.mp4
 node scripts/render-show.cjs reactions/episodio1.json --format sofa   # -> out/show-episodio1-sofa.mp4
 node scripts/render-show.cjs reactions/episodio1.json --format pie    # -> out/show-episodio1-pie.mp4
 ```
