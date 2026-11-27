@@ -4,6 +4,11 @@
 import { SPRITES } from './sprites-data.js';
 
 const INK = '#0b0402';
+// 'vector' (todo redibujado en vector, nítido a cualquier tamaño) o 'bitmap' (versión anterior:
+// el color sale de la imagen de la hoja ampliada). Se elige con ?style=bitmap en la página.
+let STYLE = 'vector';
+export const setStyle = (s) => { STYLE = s === 'bitmap' ? 'bitmap' : 'vector'; };
+const SOFT = 1.3; // suavidad del borde de la sombra (px del dibujo)
 const imgs = {};
 const geo = {};
 let off = null; // lienzo auxiliar para doblar el brazo
@@ -34,7 +39,15 @@ export async function loadSprites() {
       if (L.w.every((w) => w > 0.99)) openPath(full, L.p);
       else taper.push(L);
     }
-    geo[name] = { sil, full, taper, hasSil: (p.sil || []).length > 0 };
+    const paths = (list) => { const P2 = new Path2D(); for (const c of list || []) closedPath(P2, c); return P2; };
+    const v = p.vec || {};
+    geo[name] = {
+      sil, full, taper, hasSil: (p.sil || []).length > 0,
+      shade: paths(v.shade), stem: paths(v.stem),
+      facets: (v.facets || []).map((f) => ({ c: f.c, path: paths(f.p) })),
+      tones: (v.tones || []).map((t) => ({ col: t.col, path: paths(t.p) })),
+      hasVec: !!p.vec,
+    };
     for (const [pal, src] of Object.entries(p.img)) {
       const im = new Image();
       im.src = new URL(src, import.meta.url).href;
@@ -46,15 +59,33 @@ export async function loadSprites() {
 }
 
 // dibuja la pose sin la cara: color + contorno exterior uniforme + líneas interiores
-function drawBody(ctx, P, G, im) {
-  ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(im, 0, 0, P.w, P.h);
+function drawVectorFill(ctx, G, pal) {
+  if (G.tones.length) { for (const t of G.tones) { ctx.fillStyle = t.col; ctx.fill(t.path, 'evenodd'); } return; }
+  const C = SPRITES.palettes[pal] || SPRITES.palettes.yellow;
+  // relleno
+  ctx.fillStyle = C.base; ctx.fill(G.sil, 'evenodd');
+  // sombra con el borde suave, sin salirse de la silueta
+  ctx.save();
+  ctx.clip(G.sil, 'evenodd');
+  const T = ctx.getTransform();
+  ctx.filter = `blur(${(SOFT * Math.hypot(T.a, T.b)).toFixed(2)}px)`;
+  ctx.fillStyle = C.shade; ctx.fill(G.shade, 'evenodd');
+  ctx.filter = 'none';
+  // tallo: tono medio y encima el lado oscuro y la cara de arriba
+  ctx.fillStyle = SPRITES.stem[1]; ctx.fill(G.stem, 'evenodd');
+  for (const f of G.facets) { ctx.fillStyle = SPRITES.stem[f.c]; ctx.fill(f.path, 'evenodd'); }
+  ctx.restore();
+}
+
+function drawBody(ctx, P, G, im, pal) {
+  if (STYLE === 'vector' && G.hasVec) drawVectorFill(ctx, G, pal);
+  else { ctx.imageSmoothingQuality = 'high'; ctx.drawImage(im, 0, 0, P.w, P.h); }
   if (!G.hasSil) return;
   const lw = P.lw || 3.4;
   ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.strokeStyle = INK;
   // contorno exterior: banda de grosor uniforme por dentro del borde
   ctx.save();
-  ctx.clip(G.sil);
+  ctx.clip(G.sil, 'evenodd');
   ctx.lineWidth = lw * 2;
   ctx.stroke(G.sil);
   ctx.restore();
@@ -85,7 +116,8 @@ export function drawSprite(ctx, o) {
   ctx.scale((o.flip ? -1 : 1) * k * (o.sx || 1), k * (o.sy || 1));
   ctx.translate(-P.anchor[0], -P.anchor[1]);
   const G = geo[o.pose];
-  const body = () => drawBody(ctx, P, G, im);
+  const pal = SPRITES.palettes[o.pal || 'yellow'] ? (o.pal || 'yellow') : 'yellow';
+  const body = () => drawBody(ctx, P, G, im, pal);
   if (o.part) {
     // el brazo se DOBLA (no se corta): la pose se pinta una vez en un lienzo aparte y el brazo
     // se copia en tiras finas; cada tira gira un poco más que la anterior y en la raíz el giro
@@ -99,7 +131,7 @@ export function drawSprite(ctx, o) {
     const g = off.getContext('2d');
     g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, off.width, off.height);
     g.setTransform(kk, 0, 0, kk, 0, 0);
-    drawBody(g, P, G, im);
+    drawBody(g, P, G, im, pal);
     // cuerpo (sin la zona del brazo)
     ctx.save(); ctx.beginPath(); ctx.rect(-2000, -2000, 5000, 5000); ctx.rect(x0 + 0.5, y0, x1 - x0, y1 - y0); ctx.clip('evenodd');
     ctx.drawImage(off, 0, 0, P.w * kk, P.h * kk, 0, 0, P.w, P.h);

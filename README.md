@@ -58,6 +58,25 @@ node scripts/render-toon.cjs show   # -> out/toon-show.mp4: secuencia de 5 plát
 
 El guion de las dos animaciones está en `src/toon-anim.js`.
 
+## Plátano 2D con los dibujos de la hoja (versión actual: en vector)
+
+`scripts/sprites_from_sheet.py` toma cada pose de `assets/sheet/poses-2d.png` y la **redibuja en vector**:
+relleno, sombra suave, caras del tallo, contorno de grosor uniforme y líneas interiores. La cara (ojos y boca)
+se dibuja aparte para poder parpadear y poner la boca en U invertida. Al ser vector, se ve nítido a cualquier tamaño.
+
+```bash
+python3 scripts/sprites_from_sheet.py          # regenera src/sprites-data.js y assets/sprites/
+node scripts/render-toon.cjs test              # -> out/sprite2d-test.mp4 (prueba de movimientos)
+node scripts/render-toon.cjs show              # -> out/sprite2d-show.mp4 (secuencia de 5 plátanos)
+```
+
+### Versiones guardadas
+
+- **Versión anterior** ("2d-dibujo-hoja"): el color salía de la imagen de la hoja ampliada.
+  - Sus videos están en `versiones/2d-dibujo-hoja/`.
+  - Para volver a renderizarla: `node scripts/render-toon.cjs test --style bitmap` (y lo mismo con `show`), o abre `src/sprite2d.html?style=bitmap`.
+  - El código exacto de esa versión es el commit `b9a4657` (`git checkout b9a4657`).
+
 ## Programa de reacciones en cadena (plátano 2D que anda, se sienta y se levanta)
 
 El plátano 2D tiene brazos y piernas articulados (`src/banana-rig.js`), con el mismo cuerpo, tallo y cara del calco.

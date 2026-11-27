@@ -1,6 +1,7 @@
 // Renderiza las animaciones del plátano 2D (diseño de la hoja de personaje).
 //   node scripts/render-toon.cjs test   -> out/toon-test.mp4  (prueba de movimientos)
 //   node scripts/render-toon.cjs show   -> out/toon-show.mp4  (secuencia de 5 plátanos)
+//   ... --style bitmap   (versión anterior, con la imagen de la hoja ampliada)
 //   ... --still 1,2.5,8   (fotogramas sueltos)
 const { chromium } = require('playwright');
 const http = require('http'), fs = require('fs'), path = require('path');
@@ -23,14 +24,15 @@ const server = http.createServer((req, res) => {
   const page = await browser.newPage({ viewport: { width: 1080, height: 1920 } });
   page.on('pageerror', (e) => console.error('[page error]', e));
   const pageName = opt('page') || 'sprite2d';
-  await page.goto(`http://localhost:${server.address().port}/src/${pageName}.html?scene=${scene}`);
+  const style = opt('style') || 'vector';
+  await page.goto(`http://localhost:${server.address().port}/src/${pageName}.html?scene=${scene}&style=${style}`);
   await page.waitForFunction(() => window.READY === true, null, { timeout: 60000 });
   const META = await page.evaluate(() => window.META);
   const canvas = await page.$('canvas');
   if (opt('still')) {
     for (const t of opt('still').split(',').map(Number)) {
       await page.evaluate((t) => window.renderFrame(t), t);
-      const f = path.join(outDir, `${opt('page') || 'sprite2d'}-${scene}-${t}.png`);
+      const f = path.join(outDir, `${opt('page') || 'sprite2d'}-${scene}${opt('style') === 'bitmap' ? '-bitmap' : ''}-${t}.png`);
       await canvas.screenshot({ path: f });
       console.log(f);
     }
@@ -46,7 +48,7 @@ const server = http.createServer((req, res) => {
     const cues = path.join(outDir, `cues-toon-${scene}.json`), wav = path.join(outDir, `sfx-toon-${scene}.wav`);
     fs.writeFileSync(cues, JSON.stringify({ duration: META.DURATION, cues: META.cues }));
     execFileSync('node', [path.join(__dirname, 'sfx.mjs'), wav, cues], { stdio: 'inherit' });
-    const mp4 = path.join(outDir, `${opt('page') || 'sprite2d'}-${scene}.mp4`);
+    const mp4 = path.join(outDir, `${opt('page') || 'sprite2d'}-${scene}${opt('style') === 'bitmap' ? '-bitmap' : ''}.mp4`);
     execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(META.FPS), '-i', path.join(dir, '%05d.jpg'), '-i', wav,
       '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '18', '-preset', 'medium', '-c:a', 'aac', '-b:a', '160k', '-shortest', '-movflags', '+faststart', mp4], { stdio: 'inherit' });
     console.log('OK ->', mp4);

@@ -2,7 +2,8 @@
 //   test : prueba de movimientos para validar el personaje.
 //   show : secuencia de 5 plátanos. Video (pantalla negra) -> todos ponen la boca en U invertida
 //          -> uno llama con la mano a otro -> llega andando, se sienta -> siguiente video...
-import { drawSprite, loadSprites } from './sprite-banana.js';
+import { drawSprite, loadSprites, setStyle } from './sprite-banana.js';
+export { setStyle };
 
 export const W = 1080, H = 1920, FPS = 30;
 export { loadSprites };

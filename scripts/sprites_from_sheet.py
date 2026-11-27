@@ -98,7 +98,7 @@ def trace(mask_soft, x0, y0, k=4, eps=0.9):
     return paths
 
 
-from skimage.morphology import skeletonize
+from skimage.morphology import reconstruction, skeletonize
 
 K = 4  # trabajamos a 4x para tener líneas suaves
 
@@ -122,15 +122,51 @@ def silhouette(mask):
     """Contorno exterior suavizado (coordenadas del dibujo)."""
     big = cv2.resize(mask.astype(np.float32), None, fx=K, fy=K, interpolation=cv2.INTER_LINEAR)
     big = cv2.GaussianBlur(big, (0, 0), 2.0) > 0.5
-    cnts, _ = cv2.findContours(big.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    cnts, hier = cv2.findContours(big.astype(np.uint8), cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE)
     out = []
-    for c in cnts:
-        if cv2.contourArea(c) < 400 * K * K:
+    for c, h in zip(cnts, hier[0] if hier is not None else []):
+        hole = h[3] != -1
+        if cv2.contourArea(c) < (12 if hole else 400) * K * K:
             continue
         P = smooth_poly(c[:, 0, :].astype(np.float32), 3.0, True)
         P = cv2.approxPolyDP(np.ascontiguousarray(P, dtype=np.float32).reshape(-1, 1, 2), 0.6, True)[:, 0, :] / K
         out.append([round(float(v), 2) for q in P for v in q])
     return out, big
+
+
+def disk(r):
+    r = max(1, int(round(r)))
+    return cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r + 1, 2 * r + 1))
+
+
+def clean(m, min_area):
+    """Quita manchitas y rellena agujeritos (a escala 4x)."""
+    m = m.astype(np.uint8)
+    n, lab, st, _ = cv2.connectedComponentsWithStats(m, 8)
+    keep = np.isin(lab, [i for i in range(1, n) if st[i, 4] >= min_area])
+    inv = (~keep).astype(np.uint8)
+    n, lab, st, _ = cv2.connectedComponentsWithStats(inv, 4)
+    small = np.isin(lab, [i for i in range(1, n) if st[i, 4] < min_area])
+    return keep | small
+
+
+def vec_regions(m, sigma=2.5, eps=0.5):
+    """Contornos (con agujeros) de una máscara a escala 4x -> coordenadas del dibujo."""
+    m = cv2.GaussianBlur(m.astype(np.float32), (0, 0), sigma) > 0.5
+    cnts, hier = cv2.findContours(m.astype(np.uint8), cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE)
+    out = []
+    for c in cnts:
+        if len(c) < 8 or cv2.contourArea(c) < 6 * K * K:
+            continue
+        P = smooth_poly(c[:, 0, :].astype(np.float32), 2.0, True)
+        P = cv2.approxPolyDP(np.ascontiguousarray(P, dtype=np.float32).reshape(-1, 1, 2), eps, True)[:, 0, :] / K
+        out.append([round(float(v), 2) for q in P for v in q])
+    return out
+
+
+# colores medidos en la hoja
+STEM3 = [(183, 103, 56), (128, 64, 28), (76, 39, 13)]  # cara de arriba, cara de delante, lado oscuro
+SHADE_L = 197.0  # luminancia por debajo de la cual es sombra
 
 
 def centerlines(ink_soft, sil_big, W0):
@@ -287,7 +323,53 @@ for (x0, y0, x1, y1), names in PANELS:
             if ss[i, 4] < 45:
                 ink_vec[ll == i] = 0
         ink_paths = []
-        sil, sil_big = silhouette(mask)
+        # zonas de fondo encerradas por la figura (p. ej. entre brazo y pierna): no se rellenan
+        hsv_m = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV).astype(int)
+        bgl = (mask & (hsv_m[..., 1] < 45) & (hsv_m[..., 2] > 170)).astype(np.uint8)
+        nh, lh, sh_, _ = cv2.connectedComponentsWithStats(bgl, 4)
+        holes = np.isin(lh, [i for i in range(1, nh) if sh_[i, 4] > 15])
+        sil, sil_big = silhouette(mask & ~holes)
+        vec = None
+        if name not in ('phone', 'greenwalk'):
+            fb = cv2.resize(fill.astype(np.float32), None, fx=K, fy=K, interpolation=cv2.INTER_CUBIC)
+            Lb = cv2.GaussianBlur(fb @ np.float32([0.299, 0.587, 0.114]), (0, 0), 12.0)
+            stem_big = cv2.resize(stem_r.astype(np.float32), None, fx=K, fy=K, interpolation=cv2.INTER_LINEAR) > 0.5
+            stem_big &= sil_big
+            # sombra del lado de atrás y debajo de brazos y piernas
+            # umbral con histéresis: la sombra crece desde las zonas claramente oscuras (sin manchitas)
+            body_r = sil_big & ~stem_big
+            seed = body_r & (Lb < SHADE_L - 5)
+            grow = body_r & (Lb < SHADE_L + 1)
+            shade = reconstruction(seed.astype(np.uint8), grow.astype(np.uint8), method='dilation').astype(np.uint8)
+            shade = cv2.morphologyEx(shade, cv2.MORPH_OPEN, disk(1.5 * K))
+            shade = cv2.morphologyEx(shade, cv2.MORPH_CLOSE, disk(1.5 * K))
+            shade = clean(shade.astype(bool), 20 * K * K)
+            shade_ext = shade | (cv2.dilate(shade.astype(np.uint8), disk(3 * K)).astype(bool) & ~sil_big)
+            shade_paths = vec_regions(shade_ext, 4.0)
+            # caras del tallo: cada píxel al color de tallo más parecido
+            fbs = cv2.GaussianBlur(fb, (0, 0), 2.0)
+            d = np.stack([((fbs - np.float32(c)) ** 2).sum(2) for c in STEM3], 0)
+            cls = np.argmin(d, 0)
+            stem_all = vec_regions(stem_big, 1.5)
+            facets = []
+            for ci in (2, 0):  # lado oscuro y cara de arriba (encima del tono medio)
+                fm = clean(stem_big & (cls == ci), 10 * K * K)
+                facets.append({'c': ci, 'p': vec_regions(fm, 1.5)})
+            vec = {'shade': shade_paths, 'stem': stem_all, 'facets': facets}
+        elif name == 'phone':
+            # el móvil: 4 tonos de gris
+            fb = cv2.resize(rgb.astype(np.float32), None, fx=K, fy=K, interpolation=cv2.INTER_CUBIC)
+            mb = cv2.resize(mask.astype(np.float32), None, fx=K, fy=K, interpolation=cv2.INTER_LINEAR) > 0.5
+            px = fb[mb].reshape(-1, 3)
+            crit = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 40, 0.5)
+            _, lbl, ctr = cv2.kmeans(px, 4, None, crit, 3, cv2.KMEANS_PP_CENTERS)
+            full = np.full(mb.shape, -1, np.int32); full[mb] = lbl.ravel()
+            full = cv2.medianBlur(full.astype(np.uint8) + 1, 5).astype(np.int32) - 1
+            order = np.argsort(ctr @ [0.299, 0.587, 0.114])
+            tones = [{'col': '#%02x%02x%02x' % tuple(int(v) for v in ctr[order[0]]), 'p': vec_regions(mb, 1.5)}]
+            for ci in order[1:]:
+                tones.append({'col': '#%02x%02x%02x' % tuple(int(v) for v in ctr[ci]), 'p': vec_regions(clean(full == ci, 6 * K * K), 1.5)})
+            vec = {'tones': tones}
         W0 = 3.4  # grosor de línea de la hoja (medido: mediana 3,3 px), en px del dibujo
         lines = [] if name == 'phone' else centerlines(ink_vec, sil_big, W0)
         # apoyo: en x, el centro del tallo (así la cabeza no salta al cambiar de pose); en y, el suelo
@@ -302,7 +384,7 @@ for (x0, y0, x1, y1), names in PANELS:
             low = ys2 >= ys2.max() - 3
             ax_ = float(xs2[low].mean()); stem_size = None
         anchor = [round(ax_, 2), float(ys2.max())]
-        entry = {'w': int(crop.shape[1]), 'h': int(crop.shape[0]), 'anchor': anchor, 'ink': ink_paths, 'sil': [] if name == 'phone' else sil, 'lines': lines, 'lw': W0, 'face': face, 'img': {}}
+        entry = {'w': int(crop.shape[1]), 'h': int(crop.shape[0]), 'anchor': anchor, 'ink': ink_paths, 'sil': [] if name == 'phone' else sil, 'lines': lines, 'lw': W0, 'face': face, 'vec': vec, 'img': {}}
         pals = {'yellow': None} if name in ('phone', 'greenwalk') else PALETTES
         for pal, target in pals.items():
             col = recolor(fill, mask, target)
@@ -317,6 +399,19 @@ for (x0, y0, x1, y1), names in PANELS:
         entry['norm'] = NORM.get(name, 1.0)
         data['poses'][name] = entry
         print(f'{name:10s} {crop.shape[1]}x{crop.shape[0]} líneas={len(lines)} cara={"sí" if face else "no"}')
+
+base_c, shade_c = (254, 215, 16), (252, 194, 9)  # medidos en la hoja
+pal_out = {'yellow': {'base': '#%02x%02x%02x' % base_c, 'shade': '#%02x%02x%02x' % shade_c}}
+for pal, target in PALETTES.items():
+    if target is None:
+        continue
+    # sombra: algo más oscura y saturada (como la del amarillo)
+    h, sat, v = cv2.cvtColor(np.uint8([[target]]), cv2.COLOR_RGB2HSV)[0, 0].astype(float)
+    sh = cv2.cvtColor(np.uint8([[[h, min(255, sat * 1.18 + 8), v * 0.93]]]), cv2.COLOR_HSV2RGB)[0, 0]
+    pal_out[pal] = {'base': '#%02x%02x%02x' % tuple(target), 'shade': '#%02x%02x%02x' % tuple(int(x) for x in sh)}
+data['palettes'] = pal_out
+data['stem'] = ['#%02x%02x%02x' % c for c in STEM3]
+print('paletas', pal_out)
 
 (ROOT / 'src/sprites-data.js').write_text(
     '// Generado por scripts/sprites_from_sheet.py a partir de assets/sheet/poses-2d.png\n'

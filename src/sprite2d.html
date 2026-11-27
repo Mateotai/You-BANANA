@@ -12,7 +12,8 @@
 <body>
 <canvas id="c" width="1080" height="1920"></canvas>
 <script type="module">
-  import { buildShow, buildTest, drawFrame, FPS, loadSprites } from './sprite-anim.js';
+  import { buildShow, buildTest, drawFrame, FPS, loadSprites, setStyle } from './sprite-anim.js';
+  setStyle(new URLSearchParams(location.search).get('style') || 'vector');
   await loadSprites();
   const params = new URLSearchParams(location.search);
   const sh = params.get('scene') === 'test' ? buildTest() : buildShow({ count: +(params.get('count') || 5) });
