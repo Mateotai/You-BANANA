@@ -98,6 +98,96 @@ def trace(mask_soft, x0, y0, k=4, eps=0.9):
     return paths
 
 
+from skimage.morphology import skeletonize
+
+K = 4  # trabajamos a 4x para tener líneas suaves
+
+
+def smooth_poly(P, sigma, closed):
+    if len(P) < 3:
+        return P
+    k = int(3 * sigma) + 1
+    ker = cv2.getGaussianKernel(2 * k + 1, sigma).ravel()
+    if closed:
+        pad = np.concatenate([P[-k:], P, P[:k]])
+    else:
+        pad = np.concatenate([np.repeat(P[:1], k, 0), P, np.repeat(P[-1:], k, 0)])
+    out = np.stack([np.convolve(pad[:, j], ker, 'valid') for j in range(P.shape[1])], 1)
+    if not closed:
+        out[0], out[-1] = P[0], P[-1]
+    return out
+
+
+def silhouette(mask):
+    """Contorno exterior suavizado (coordenadas del dibujo)."""
+    big = cv2.resize(mask.astype(np.float32), None, fx=K, fy=K, interpolation=cv2.INTER_LINEAR)
+    big = cv2.GaussianBlur(big, (0, 0), 2.0) > 0.5
+    cnts, _ = cv2.findContours(big.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    out = []
+    for c in cnts:
+        if cv2.contourArea(c) < 400 * K * K:
+            continue
+        P = smooth_poly(c[:, 0, :].astype(np.float32), 3.0, True)
+        P = cv2.approxPolyDP(np.ascontiguousarray(P, dtype=np.float32).reshape(-1, 1, 2), 0.6, True)[:, 0, :] / K
+        out.append([round(float(v), 2) for q in P for v in q])
+    return out, big
+
+
+def centerlines(ink_soft, sil_big, W0):
+    """Líneas interiores: eje central del trazo, sin las que van por el borde exterior."""
+    big = cv2.resize(ink_soft.astype(np.float32), None, fx=K, fy=K, interpolation=cv2.INTER_CUBIC)
+    big = cv2.GaussianBlur(big, (0, 0), 1.2) > 0.35
+    sk = skeletonize(big)
+    # fuera lo que está pegado al borde (eso ya lo dibuja el contorno exterior)
+    din = cv2.distanceTransform(sil_big.astype(np.uint8), cv2.DIST_L2, 5)
+    sk &= din > 0.95 * W0 * K
+    dist = cv2.distanceTransform(big.astype(np.uint8), cv2.DIST_L2, 5)
+    ys, xs = np.nonzero(sk)
+    S = set(zip(ys.tolist(), xs.tolist()))
+    nb = lambda p: [(p[0] + dy, p[1] + dx) for dy in (-1, 0, 1) for dx in (-1, 0, 1) if (dy or dx) and (p[0] + dy, p[1] + dx) in S]
+    deg = {p: len(nb(p)) for p in S}
+    seen = set()
+    lines = []
+    def walk(a, b):
+        path = [a, b]; seen.add((a, b)); seen.add((b, a))
+        while deg[path[-1]] == 2:
+            nxt = [q for q in nb(path[-1]) if q != path[-2]]
+            if not nxt or (path[-1], nxt[0]) in seen:
+                break
+            seen.add((path[-1], nxt[0])); seen.add((nxt[0], path[-1]))
+            path.append(nxt[0])
+        return path
+    for p in S:
+        if deg[p] != 2:
+            for q in nb(p):
+                if (p, q) not in seen:
+                    lines.append(walk(p, q))
+    for p in S:  # bucles cerrados
+        if deg[p] == 2 and not any((p, q) in seen for q in nb(p)):
+            lines.append(walk(p, nb(p)[0]))
+    out = []
+    for L in lines:
+        if len(L) < 6 * K:  # trocitos sueltos fuera
+            continue
+        P = np.array([[x, y] for y, x in L], np.float32)
+        w = np.array([dist[y, x] * 2 / K for y, x in L], np.float32)
+        P = smooth_poly(P, 3.0, False)
+        w = smooth_poly(w[:, None], 4.0, False)[:, 0]
+        # extremos libres (sin unir a nada) -> se afinan como en el dibujo
+        free0, free1 = deg[L[0]] == 1, deg[L[-1]] == 1
+        idx = list(range(0, len(P), 3)) + [len(P) - 1]
+        pts, ws = [], []
+        for i in sorted(set(idx)):
+            ww = min(1.0, w[i] / W0)
+            if not (free0 and i < len(P) * 0.5) and not (free1 and i >= len(P) * 0.5):
+                ww = 1.0
+            ww = max(0.25, ww)
+            pts += [round(float(P[i][0]) / K, 2), round(float(P[i][1]) / K, 2)]
+            ws.append(round(float(ww), 2))
+        out.append({'p': pts, 'w': ws})
+    return out
+
+
 data = {'poses': {}}
 for (x0, y0, x1, y1), names in PANELS:
     panel = SHEET[y0:y1, x0:x1]
@@ -177,7 +267,14 @@ for (x0, y0, x1, y1), names in PANELS:
                 for f in [mouth] + eyes:
                     face_mask |= lab == f[0]
         # capa de color: quitamos líneas y cara rellenando con el color de alrededor
-        remove = cv2.dilate(((ink_soft > 0.15) | face_mask).astype(np.uint8), np.ones((3, 3), np.uint8))
+        hsv_r = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV).astype(int)
+        stem_r = (hsv_r[..., 0] <= 17) & (hsv_r[..., 1] > 90) & (hsv_r[..., 2] > 50)
+        # sólo el tallo de verdad (la mancha marrón grande), no los bordes oscuros de las líneas
+        nbs, lbs, sbs, _ = cv2.connectedComponentsWithStats(stem_r.astype(np.uint8), 8)
+        stem_r = (lbs == (1 + np.argmax(sbs[1:, 4]))) if nbs > 1 and name != 'phone' else np.zeros_like(stem_r)
+        stem_r = fill_holes(stem_r)
+        stem_r = cv2.dilate(stem_r.astype(np.uint8), np.ones((3, 3), np.uint8)).astype(bool) & ~(mx < 60)
+        remove = cv2.dilate((((ink_soft > 0.04) & ~stem_r) | face_mask).astype(np.uint8), np.ones((5, 5), np.uint8))
         if name == 'phone':
             remove[:] = 0
         fill = cv2.inpaint(rgb, remove, 6, cv2.INPAINT_TELEA)
@@ -189,7 +286,10 @@ for (x0, y0, x1, y1), names in PANELS:
         for i in range(1, nn):
             if ss[i, 4] < 45:
                 ink_vec[ll == i] = 0
-        ink_paths = [] if name == 'phone' else trace(ink_vec, 0, 0)  # el móvil se deja tal cual (es gris oscuro, no línea)
+        ink_paths = []
+        sil, sil_big = silhouette(mask)
+        W0 = 3.4  # grosor de línea de la hoja (medido: mediana 3,3 px), en px del dibujo
+        lines = [] if name == 'phone' else centerlines(ink_vec, sil_big, W0)
         # apoyo: en x, el centro del tallo (así la cabeza no salta al cambiar de pose); en y, el suelo
         ys2, xs2 = np.nonzero(mask)
         hsv_c = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV).astype(int)
@@ -202,7 +302,7 @@ for (x0, y0, x1, y1), names in PANELS:
             low = ys2 >= ys2.max() - 3
             ax_ = float(xs2[low].mean()); stem_size = None
         anchor = [round(ax_, 2), float(ys2.max())]
-        entry = {'w': int(crop.shape[1]), 'h': int(crop.shape[0]), 'anchor': anchor, 'ink': ink_paths, 'face': face, 'img': {}}
+        entry = {'w': int(crop.shape[1]), 'h': int(crop.shape[0]), 'anchor': anchor, 'ink': ink_paths, 'sil': [] if name == 'phone' else sil, 'lines': lines, 'lw': W0, 'face': face, 'img': {}}
         pals = {'yellow': None} if name in ('phone', 'greenwalk') else PALETTES
         for pal, target in pals.items():
             col = recolor(fill, mask, target)
@@ -216,7 +316,7 @@ for (x0, y0, x1, y1), names in PANELS:
                 'slump': 0.935, 'sit': 0.957, 'call': 1.13, 'hug': 0.917, 'greenwalk': 1.3, 'phone': 1.0}
         entry['norm'] = NORM.get(name, 1.0)
         data['poses'][name] = entry
-        print(f'{name:10s} {crop.shape[1]}x{crop.shape[0]} tinta={len(ink_paths)} cara={"sí" if face else "no"}')
+        print(f'{name:10s} {crop.shape[1]}x{crop.shape[0]} líneas={len(lines)} cara={"sí" if face else "no"}')
 
 (ROOT / 'src/sprites-data.js').write_text(
     '// Generado por scripts/sprites_from_sheet.py a partir de assets/sheet/poses-2d.png\n'

@@ -29,7 +29,7 @@ const settle = (t, t0, amp, f = 2.4, d = 6) => (t < t0 ? 0 : amp * Math.exp(-d *
 const pulse = (t, t0, d) => { const x = (t - t0) / d; return x < 0 || x > 1 ? 0 : Math.sin(Math.PI * x); };
 
 // brazo del gesto de llamar (en coordenadas del dibujo "call"): se gira desde el hombro
-const CALL_ARM = { clip: [113, 92, 95, 65], pivot: [112, 140] };
+const CALL_ARM = { x0: 106, x1: 200, y0: 66, y1: 160, pivot: [112, 154], ramp: 30 };
 const WALK = ['walk1', 'walk2', 'walk3', 'walk2'];
 const HOLD = 0.165; // s por dibujo al andar (5 fotogramas)
 const STEP = 0.29; // avance (unidades del cuerpo) por dibujo
