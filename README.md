@@ -47,6 +47,17 @@ El chiste de este personaje es su **cara de póker**: dos puntos y una raya. As�
 4. Pon el texto (por ejemplo "POV: el plátano ve…") **dentro de la zona del video**, arriba, para no tapar al plátano.
 5. **2D vs 3D:** el 3D se parece más a la figura y destaca en el feed. El 2D es más rápido de producir en serie y se entiende mejor en miniatura. Una buena estrategia: el 3D como "personaje principal" del canal y el 2D para stickers o miniaturas.
 
+## Plátano 2D de la hoja de personaje (versión actual)
+
+`src/toon.js` dibuja el plátano con las medidas tomadas de la hoja de personaje. Es una sola silueta con contorno negro, y brazos y piernas se funden con el cuerpo. Gira de forma continua (frente, 3/4, perfil y espalda), anda, se sienta, llama con la mano, se abraza las rodillas, pone la boca en U invertida y parpadea.
+
+```bash
+node scripts/render-toon.cjs test   # -> out/toon-test.mp4: prueba de movimientos (para validar el personaje)
+node scripts/render-toon.cjs show   # -> out/toon-show.mp4: secuencia de 5 plátanos con pantallas negras como videos
+```
+
+El guion de las dos animaciones está en `src/toon-anim.js`.
+
 ## Programa de reacciones en cadena (plátano 2D que anda, se sienta y se levanta)
 
 El plátano 2D tiene brazos y piernas articulados (`src/banana-rig.js`), con el mismo cuerpo, tallo y cara del calco.
