@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>You-BANANA 2D (hoja)</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Rubik:wght@600;700;800&display=swap');
+  html, body { margin: 0; background: #000; }
+  canvas { display: block; width: 1080px; height: 1920px; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script type="module">
+  import { buildShow, buildTest, drawFrame, FPS, loadSprites } from './sprite-anim.js';
+  await loadSprites();
+  const params = new URLSearchParams(location.search);
+  const sh = params.get('scene') === 'test' ? buildTest() : buildShow({ count: +(params.get('count') || 5) });
+  const ctx = document.getElementById('c').getContext('2d');
+  window.renderFrame = async (t) => { drawFrame(ctx, sh, t); return true; };
+  window.META = { DURATION: sh.duration, FPS, cues: sh.cues };
+  await document.fonts.ready;
+  await window.renderFrame(0);
+  window.READY = true;
+  if (params.get('play')) {
+    const t0 = performance.now();
+    const loop = () => { drawFrame(ctx, sh, ((performance.now() - t0) / 1000) % sh.duration); requestAnimationFrame(loop); };
+    loop();
+  }
+</script>
+</body>
+</html>

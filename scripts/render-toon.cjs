@@ -10,7 +10,7 @@ const scene = argv[0] || 'show';
 const opt = (k) => { const i = argv.indexOf('--' + k); return i >= 0 ? argv[i + 1] : undefined; };
 const root = path.resolve(__dirname, '..'), outDir = path.join(root, 'out');
 fs.mkdirSync(outDir, { recursive: true });
-const types = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json' };
+const types = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.png': 'image/png' };
 const server = http.createServer((req, res) => {
   const p = path.join(root, decodeURIComponent(req.url.split('?')[0]));
   if (!p.startsWith(root) || !fs.existsSync(p) || fs.statSync(p).isDirectory()) { res.writeHead(404); return res.end(); }
@@ -22,14 +22,15 @@ const server = http.createServer((req, res) => {
   const browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1080, height: 1920 } });
   page.on('pageerror', (e) => console.error('[page error]', e));
-  await page.goto(`http://localhost:${server.address().port}/src/toon2.html?scene=${scene}`);
+  const pageName = opt('page') || 'sprite2d';
+  await page.goto(`http://localhost:${server.address().port}/src/${pageName}.html?scene=${scene}`);
   await page.waitForFunction(() => window.READY === true, null, { timeout: 60000 });
   const META = await page.evaluate(() => window.META);
   const canvas = await page.$('canvas');
   if (opt('still')) {
     for (const t of opt('still').split(',').map(Number)) {
       await page.evaluate((t) => window.renderFrame(t), t);
-      const f = path.join(outDir, `toon-${scene}-${t}.png`);
+      const f = path.join(outDir, `${opt('page') || 'sprite2d'}-${scene}-${t}.png`);
       await canvas.screenshot({ path: f });
       console.log(f);
     }
@@ -45,7 +46,7 @@ const server = http.createServer((req, res) => {
     const cues = path.join(outDir, `cues-toon-${scene}.json`), wav = path.join(outDir, `sfx-toon-${scene}.wav`);
     fs.writeFileSync(cues, JSON.stringify({ duration: META.DURATION, cues: META.cues }));
     execFileSync('node', [path.join(__dirname, 'sfx.mjs'), wav, cues], { stdio: 'inherit' });
-    const mp4 = path.join(outDir, `toon-${scene}.mp4`);
+    const mp4 = path.join(outDir, `${opt('page') || 'sprite2d'}-${scene}.mp4`);
     execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(META.FPS), '-i', path.join(dir, '%05d.jpg'), '-i', wav,
       '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '18', '-preset', 'medium', '-c:a', 'aac', '-b:a', '160k', '-shortest', '-movflags', '+faststart', mp4], { stdio: 'inherit' });
     console.log('OK ->', mp4);
