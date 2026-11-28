@@ -19,7 +19,7 @@ const save = (f, url) => fs.writeFileSync(path.join(out, f), Buffer.from(url.spl
   const browser = await chromium.launch();
   const page = await browser.newPage();
   const qs = new URLSearchParams();
-  if (name) qs.set('name', name); if (t1) qs.set('t1', t1); if (t2) qs.set('t2', t2);
+  if (name) qs.set('name', name); if (t1) qs.set('t1', t1); if (t2 !== undefined) qs.set('t2', t2);
   await page.goto(`http://localhost:${server.address().port}/src/brand.html?${qs}`);
   await page.waitForFunction(() => window.READY === true, null, { timeout: 60000 });
   save('foto-perfil-800x800.png', await page.evaluate(() => window.renderAvatar(800)));

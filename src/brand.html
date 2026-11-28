@@ -18,8 +18,8 @@
   await Promise.all([document.fonts.load('700 100px Fredoka'), document.fonts.load('700 60px Rubik'), document.fonts.load('500 60px Rubik')]);
   const q = new URLSearchParams(location.search);
   const NAME = q.get('name') || 'You-BANANA';
-  const T1 = q.get('t1') || 'Reacciones a vídeos virales';
-  const T2 = q.get('t2') || 'con cara de póker';
+  const T1 = q.get('t1') || "We've seen things.";
+  const T2 = q.get('t2') || ''; // segunda línea opcional
   const INK = '#0b0402';
   const BRAND = { purple: '#5b3fd6', purpleDark: '#3f27a8', purpleLight: '#7a5cf0', yellow: '#fed710' };
   const c = document.getElementById('c');
@@ -111,10 +111,12 @@
     // ---- textos
     const fit = (txt, weight, size, w) => { let f = size; ctx.font = `${weight} ${f}px Rubik`; while (ctx.measureText(txt).width > w && f > 20) { f -= 2; ctx.font = `${weight} ${f}px Rubik`; } return f; };
     ctx.fillStyle = '#ffffff';
-    const f1 = fit(T1, 700, 60, maxW);
+    const f1 = fit(T1, 700, T2 ? 60 : 84, maxW);
     ctx.fillText(T1, tx + 6, ty + 30 + f1 * 1.15);
-    fit(T2, 500, Math.round(f1 * 0.86), maxW);
-    ctx.globalAlpha = 0.85; ctx.fillText(T2, tx + 6, ty + 30 + f1 * 2.25); ctx.globalAlpha = 1;
+    if (T2) {
+      fit(T2, 500, Math.round(f1 * 0.86), maxW);
+      ctx.globalAlpha = 0.85; ctx.fillText(T2, tx + 6, ty + 30 + f1 * 2.25); ctx.globalAlpha = 1;
+    }
 
     if (guides) {
       const box = (x, y, w, h, col, label) => {

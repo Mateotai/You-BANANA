@@ -13,7 +13,7 @@
 **Para cambiar el nombre o los textos:**
 
 ```bash
-node scripts/export-brand.cjs "Nombre del canal" "Reacciones a vídeos virales" "con cara de póker"
+node scripts/export-brand.cjs "Nombre del canal" "We've seen things." ["segunda línea opcional"]
 ```
 
 El diseño está en `src/brand.html` y usa los dibujos en vector del personaje.
