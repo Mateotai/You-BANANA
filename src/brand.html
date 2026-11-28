@@ -77,8 +77,8 @@
     ctx.fillStyle = 'rgba(20,8,60,0.22)';
     ctx.beginPath(); ctx.ellipse(1685, 912, 360, 34, 0, 0, Math.PI * 2); ctx.fill();
 
-    // ---- la pandilla (como al final de cada episodio: todos con la boca en U invertida)
-    const frown = { frown: 1, lookY: 0.15 };
+    // ---- la pandilla, todos con cara de póker
+    const frown = { lookY: -0.05 }; // cara de póker (la misma que la foto de perfil)
     const shadow = (x, y, w) => { ctx.fillStyle = 'rgba(20,8,60,0.28)'; ctx.beginPath(); ctx.ellipse(x, y, w, w * 0.16, 0, 0, Math.PI * 2); ctx.fill(); };
     // fila de atrás
     shadow(1580, 846, 92); banana(ctx, 'sit', 1555, 846, 250, { pal: 'pink', face: frown });
