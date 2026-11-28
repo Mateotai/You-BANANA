@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>You-BANANA: imágenes del canal</title>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@600;700&family=Rubik:wght@500;600;700;800&display=swap" rel="stylesheet">
+<style>html, body { margin: 0; background: #000; } canvas { display: block; }</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script type="module">
+  // Imágenes del canal de YouTube con los dibujos (en vector) del personaje:
+  //   foto de perfil 800x800 · banner 2560x1440 (zona segura 1546x423) · marca de agua 150x150.
+  // Textos editables con ?name=...&t1=...&t2=...
+  import { loadSprites, drawSprite, poseInfo, setStyle } from './sprite-banana.js';
+  setStyle('vector');
+  await loadSprites();
+  await Promise.all([document.fonts.load('700 100px Fredoka'), document.fonts.load('700 60px Rubik'), document.fonts.load('500 60px Rubik')]);
+  const q = new URLSearchParams(location.search);
+  const NAME = q.get('name') || 'You-BANANA';
+  const T1 = q.get('t1') || 'Reacciones a vídeos virales';
+  const T2 = q.get('t2') || 'con cara de póker';
+  const INK = '#0b0402';
+  const BRAND = { purple: '#5b3fd6', purpleDark: '#3f27a8', purpleLight: '#7a5cf0', yellow: '#fed710' };
+  const c = document.getElementById('c');
+
+  // plátano: x = centro del tallo, y = suelo, h = alto del cuerpo en px (para todas las poses igual)
+  const banana = (ctx, pose, x, y, h, o = {}) => drawSprite(ctx, { pose, x, y, s: h / 330, ...o });
+
+  function brandBackground(ctx, w, h, cx, cy) {
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.hypot(w, h) * 0.6);
+    g.addColorStop(0, BRAND.purpleLight); g.addColorStop(0.55, BRAND.purple); g.addColorStop(1, BRAND.purpleDark);
+    ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+  }
+
+  // ---------------------------------------------------------------- foto de perfil
+  window.renderAvatar = (size = 800, transparentCorners = false) => {
+    c.width = size; c.height = size;
+    const ctx = c.getContext('2d');
+    ctx.clearRect(0, 0, size, size);
+    ctx.save();
+    if (transparentCorners) { ctx.beginPath(); ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2); ctx.clip(); }
+    brandBackground(ctx, size, size, size / 2, size * 0.42);
+    // anillo suave detrás de la cabeza
+    ctx.fillStyle = 'rgba(255,255,255,0.10)';
+    ctx.beginPath(); ctx.arc(size / 2, size * 0.56, size * 0.36, 0, Math.PI * 2); ctx.fill();
+    // el plátano de frente, cara de póker, cortado a la altura del pecho
+    const k = size / 800, h = 1290 * k; // alto del cuerpo
+    const P = poseInfo('front'), e = P.face.eyes, eyeY = (e[0][1] + e[1][1]) / 2;
+    const sc = (h / 330) * (P.norm || 1);
+    const floor = 505 * k + (P.anchor[1] - eyeY) * sc; // los ojos quedan en y = 505
+    banana(ctx, 'front', size / 2 + (P.anchor[0] - (e[0][0] + e[1][0]) / 2) * sc, floor, h, { face: { lookY: -0.05 } });
+    ctx.restore();
+    return c.toDataURL('image/png');
+  };
+
+  // ---------------------------------------------------------------- banner
+  // zona que se ve en todos los dispositivos: 1546x423 en el centro (x 507-2053, y 508-931)
+  window.renderBanner = (guides = false) => {
+    const W = 2560, H = 1440;
+    c.width = W; c.height = H;
+    const ctx = c.getContext('2d');
+    brandBackground(ctx, W, H, W * 0.62, H * 0.48);
+    // confeti con los colores de los plátanos (decorado; en los lados sólo se ve en ordenador y TV)
+    const cols = ['#fed710', '#b4d95f', '#ffa4c7', '#8cd2ff', '#c4a5ff'];
+    let seed = 7;
+    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    for (let i = 0; i < 140; i++) {
+      const x = rnd() * W, y = rnd() * H, r = 6 + rnd() * 16;
+      if (x > 480 && x < 2080 && y > 480 && y < 960) continue; // la zona del contenido, limpia
+      ctx.globalAlpha = 0.5 + rnd() * 0.4;
+      ctx.fillStyle = cols[i % cols.length];
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    // suelo suave bajo los plátanos
+    ctx.fillStyle = 'rgba(20,8,60,0.22)';
+    ctx.beginPath(); ctx.ellipse(1685, 912, 360, 34, 0, 0, Math.PI * 2); ctx.fill();
+
+    // ---- la pandilla (como al final de cada episodio: todos con la boca en U invertida)
+    const frown = { frown: 1, lookY: 0.15 };
+    const shadow = (x, y, w) => { ctx.fillStyle = 'rgba(20,8,60,0.28)'; ctx.beginPath(); ctx.ellipse(x, y, w, w * 0.16, 0, 0, Math.PI * 2); ctx.fill(); };
+    // fila de atrás
+    shadow(1580, 846, 92); banana(ctx, 'sit', 1555, 846, 250, { pal: 'pink', face: frown });
+    shadow(1790, 846, 92); banana(ctx, 'sit', 1815, 846, 250, { pal: 'blue', flip: true, face: frown });
+    shadow(1695, 826, 84); banana(ctx, 'sit', 1675, 826, 228, { pal: 'purple', face: frown });
+    // fila de delante
+    shadow(1483, 912, 118); banana(ctx, 'sit', 1445, 912, 318, { pal: 'yellow', face: frown });
+    shadow(1887, 912, 118); banana(ctx, 'sit', 1925, 912, 318, { pal: 'green', flip: true, face: frown });
+    // el móvil
+    banana(ctx, 'phone', 1685, 924, 330 * 0.9, { flip: true });
+
+    // ---- nombre del canal (ajustado al ancho disponible)
+    const tx = 560, maxW = 700;
+    let fs = 190;
+    ctx.font = `700 ${fs}px Fredoka`;
+    while (ctx.measureText(NAME).width > maxW && fs > 60) { fs -= 4; ctx.font = `700 ${fs}px Fredoka`; }
+    const ty = 700;
+    ctx.lineJoin = 'round';
+    ctx.textBaseline = 'alphabetic';
+    // sombra
+    ctx.fillStyle = 'rgba(20,8,60,0.35)';
+    ctx.fillText(NAME, tx + 10, ty + 12);
+    // contorno grueso (como el del personaje) y relleno amarillo
+    ctx.lineWidth = fs * 0.14; ctx.strokeStyle = INK; ctx.strokeText(NAME, tx, ty);
+    ctx.fillStyle = BRAND.yellow; ctx.fillText(NAME, tx, ty);
+    // brillo
+    ctx.save(); ctx.beginPath(); ctx.rect(tx - 20, ty - fs, maxW + 60, fs * 0.42); ctx.clip();
+    ctx.fillStyle = 'rgba(255,255,255,0.28)'; ctx.fillText(NAME, tx, ty); ctx.restore();
+
+    // ---- textos
+    const fit = (txt, weight, size, w) => { let f = size; ctx.font = `${weight} ${f}px Rubik`; while (ctx.measureText(txt).width > w && f > 20) { f -= 2; ctx.font = `${weight} ${f}px Rubik`; } return f; };
+    ctx.fillStyle = '#ffffff';
+    const f1 = fit(T1, 700, 60, maxW);
+    ctx.fillText(T1, tx + 6, ty + 30 + f1 * 1.15);
+    fit(T2, 500, Math.round(f1 * 0.86), maxW);
+    ctx.globalAlpha = 0.85; ctx.fillText(T2, tx + 6, ty + 30 + f1 * 2.25); ctx.globalAlpha = 1;
+
+    if (guides) {
+      const box = (x, y, w, h, col, label) => {
+        ctx.strokeStyle = col; ctx.lineWidth = 6; ctx.setLineDash([24, 14]); ctx.strokeRect(x, y, w, h); ctx.setLineDash([]);
+        ctx.fillStyle = col; ctx.font = '600 34px Rubik'; ctx.fillText(label, x + 14, y + 44);
+      };
+      box(0, 0, W, H, '#ffffff', 'TV (2560x1440)');
+      box(0, 508, W, 423, '#7cf5c3', 'Ordenador (2560x423)');
+      box(507, 508, 1546, 423, '#ff4d6d', 'Móvil: zona segura (1546x423)');
+    }
+    return c.toDataURL('image/png');
+  };
+
+  // ---------------------------------------------------------------- marca de agua (150x150)
+  window.renderWatermark = () => window.renderAvatar(150, true);
+  window.READY = true;
+</script>
+</body>
+</html>
