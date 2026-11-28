@@ -350,10 +350,12 @@ for (x0, y0, x1, y1), names in PANELS:
             fbs = cv2.GaussianBlur(fb, (0, 0), 2.0)
             d = np.stack([((fbs - np.float32(c)) ** 2).sum(2) for c in STEM3], 0)
             cls = np.argmin(d, 0)
-            stem_all = vec_regions(stem_big, 1.5)
+            # un poco hacia dentro: así el marrón no asoma por debajo de la línea tallo-cuerpo
+            stem_in = cv2.erode(stem_big.astype(np.uint8), disk(0.7 * K)).astype(bool)
+            stem_all = vec_regions(stem_in, 1.5)
             facets = []
             for ci in (2, 0):  # lado oscuro y cara de arriba (encima del tono medio)
-                fm = clean(stem_big & (cls == ci), 10 * K * K)
+                fm = clean(stem_in & (cls == ci), 10 * K * K)
                 facets.append({'c': ci, 'p': vec_regions(fm, 1.5)})
             vec = {'shade': shade_paths, 'stem': stem_all, 'facets': facets}
         elif name == 'phone':

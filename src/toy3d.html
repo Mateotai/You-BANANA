@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>You-BANANA 3D</title>
+<script type="importmap">{ "imports": { "three": "../node_modules/three/build/three.module.js", "three/addons/": "../node_modules/three/examples/jsm/" } }</script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Rubik:wght@600;700;800&display=swap');
+  html, body { margin: 0; background: #000; }
+  canvas { display: block; width: 1080px; height: 1920px; }
+  #gl { position: absolute; left: -5000px; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<canvas id="gl" width="1080" height="1920"></canvas>
+<script type="module">
+  import { buildShow, buildTest, createScene3D, drawOverlay, FPS } from './anim3d.js';
+  const params = new URLSearchParams(location.search);
+  const sh = params.get('scene') === 'test' ? buildTest() : buildShow({ count: +(params.get('count') || 5) });
+  const gl = document.getElementById('gl');
+  const s3 = createScene3D(gl);
+  const ctx = document.getElementById('c').getContext('2d');
+  window.renderFrame = async (t) => { const fs = s3.render(sh, t); drawOverlay(ctx, fs, gl); return true; };
+  window.META = { DURATION: sh.duration, FPS, cues: sh.cues, labels: sh.labels || [] };
+  await document.fonts.ready;
+  await window.renderFrame(0);
+  window.READY = true;
+</script>
+</body>
+</html>

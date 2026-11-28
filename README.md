@@ -58,6 +58,13 @@ node scripts/render-toon.cjs show   # -> out/toon-show.mp4: secuencia de 5 plát
 
 El guion de las dos animaciones está en `src/toon-anim.js`.
 
+## 👉 Kit del personaje (empieza aquí)
+
+En **[`personaje/`](personaje/README.md)** está todo lo necesario para usar al plátano en los vídeos:
+
+- en 2D: vector (SVG), PNG transparentes, clips en verde croma, hoja del personaje y videos;
+- en 3D: la hoja del personaje y los videos.
+
 ## Plátano 2D con los dibujos de la hoja (versión actual: en vector)
 
 `scripts/sprites_from_sheet.py` toma cada pose de `assets/sheet/poses-2d.png` y la **redibuja en vector**:

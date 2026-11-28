@@ -18,8 +18,9 @@
   const params = new URLSearchParams(location.search);
   const sh = params.get('scene') === 'test' ? buildTest() : buildShow({ count: +(params.get('count') || 5) });
   const ctx = document.getElementById('c').getContext('2d');
-  window.renderFrame = async (t) => { drawFrame(ctx, sh, t); return true; };
-  window.META = { DURATION: sh.duration, FPS, cues: sh.cues };
+  const OPTS = { green: params.get('bg') === 'green' };
+  window.renderFrame = async (t) => { drawFrame(ctx, sh, t, OPTS); return true; };
+  window.META = { DURATION: sh.duration, FPS, cues: sh.cues, labels: sh.labels || [] };
   await document.fonts.ready;
   await window.renderFrame(0);
   window.READY = true;

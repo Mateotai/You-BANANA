@@ -169,7 +169,7 @@ export function buildShow({ videoLen = 2.5, count = 5 } = {}) {
     for (const c of seated) {
       if (c === caller) continue;
       const wp = watchPhi(c.slot);
-      c.phi.push([Te + 1.7, wp], [Te + 2.15, lerp(wp, entrySide * 1.0, 0.45)], [Te + 3.9, lerp(wp, entrySide * 1.0, 0.45)], [Te + 4.3, wp]);
+      c.phi.push([Te + 1.7, wp], [Te + 2.15, lerp(wp, entrySide * 1.0, 0.25)], [Te + 3.9, lerp(wp, entrySide * 1.0, 0.25)], [Te + 4.3, wp]); // giran un poco y miran con los ojos
       c.look.push([Te + 1.7, 0], [Te + 2.1, entrySide * 0.6], [Te + 3.9, entrySide * 0.6], [Te + 4.3, 0]);
       c.blinks.push(Te + 2.6);
     }
@@ -318,4 +318,15 @@ export function drawFrame(ctx, sh, t) {
       ctx.font = '700 46px Rubik, Arial, sans-serif'; ctx.fillText(text, W / 2, 150); ctx.globalAlpha = 1;
     }
   }
+}
+
+// Estado de la escena en el instante t, sin dibujar (lo usa la versión 3D: src/anim3d.js).
+// Las posiciones están en "unidades de cuerpo" (alto del cuerpo = 1); wz = filas hacia el fondo.
+export const PAL_NAMES = new Map([[PALETTES.yellow, 'yellow'], [PALETTES.green, 'green'], [PALETTES.pink, 'pink'], [PALETTES.blue, 'blue'], [PALETTES.purple, 'purple']]);
+export function frameState(sh, t) {
+  const video = sh.videos.find(([a, b]) => t >= a && t < b) || null;
+  const chars = sh.chars.map((c, i) => { const st = charState(c, t, i); st.palName = PAL_NAMES.get(st.pal) || 'yellow'; return st; });
+  const cam = sh.single ? { x: chars[0].x, y: 0.5, z: 820 } : { x: sh.camT.x(t), y: sh.camT.y(t), z: sh.camT.z(t) };
+  const label = (sh.labels || []).find(([a, b]) => t >= a && t < b);
+  return { video, chars, cam, phone: sh.single ? null : PHONE, label: label ? label[2] : null, single: !!sh.single };
 }

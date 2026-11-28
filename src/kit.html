@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>Kit del personaje</title></head>
+<body style="margin:0">
+<canvas id="c"></canvas>
+<script type="module">
+  // Pinta una pose del personaje (en vector) sobre fondo transparente y la devuelve como PNG.
+  import { loadSprites, drawSprite, poseInfo, setStyle } from './sprite-banana.js';
+  setStyle('vector');
+  await loadSprites();
+  const c = document.getElementById('c');
+  window.renderPose = (pose, pal, face, height = 1200) => {
+    const P = poseInfo(pose);
+    const k = height / P.h, pad = Math.round(height * 0.02);
+    c.width = Math.ceil(P.w * k) + 2 * pad; c.height = Math.ceil(P.h * k) + 2 * pad;
+    const ctx = c.getContext('2d');
+    ctx.clearRect(0, 0, c.width, c.height);
+    drawSprite(ctx, { pose, pal, x: pad + P.anchor[0] * k, y: pad + P.anchor[1] * k, s: k / (P.norm || 1), face });
+    return c.toDataURL('image/png');
+  };
+  window.hasFace = (pose) => !!poseInfo(pose).face;
+  window.READY = true;
+</script>
+</body></html>

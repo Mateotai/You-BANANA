@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>Plátano 3D: vistas</title>
+<script type="importmap">{ "imports": { "three": "../node_modules/three/build/three.module.js", "three/addons/": "../node_modules/three/examples/jsm/" } }</script>
+<style>html,body{margin:0;background:#000}</style></head>
+<body><canvas id="c" width="1448" height="1086"></canvas>
+<script type="module">
+  // Pinta el plátano 3D en las mismas vistas y a la misma escala que la hoja 3D (para comparar).
+  import * as THREE from 'three';
+  import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+  import { Banana3D, PALETTE3D } from './toy3d.js';
+  const q = new URLSearchParams(location.search);
+  const canvas = document.getElementById('c');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+  renderer.setSize(1448, 1086, false); renderer.setPixelRatio(1);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.NoToneMapping;
+  renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.VSMShadowMap;
+  renderer.setScissorTest(true);
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color('#d2c8c5');
+  const pm = new THREE.PMREMGenerator(renderer);
+  scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
+  scene.environmentIntensity = +(q.get('env') || 0.15);
+  const key = new THREE.DirectionalLight('#fff8ee', +(q.get('key') || 0.65)); key.position.set(+(q.get('kx') || 3.5), 6, 3.5);
+  scene.add(key);
+  // luz de arriba sólo para la sombra suave en el suelo
+  const top = new THREE.DirectionalLight('#ffffff', 0.08); top.position.set(0.4, 8, 1.2); top.castShadow = true;
+  top.shadow.mapSize.set(1024, 1024); Object.assign(top.shadow.camera, { left: -2, right: 2, top: 2, bottom: -2, near: 0.1, far: 20 }); top.shadow.radius = 18; top.shadow.blurSamples = 24; top.shadow.bias = -0.0005;
+  scene.add(top);
+  scene.add(new THREE.HemisphereLight('#ffffff', '#e8dccf', +(q.get('hemi') || 2.15)));
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.ShadowMaterial({ opacity: 0.35 }));
+  floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
+  const b = new Banana3D(); scene.add(b.root);
+  const S = +(q.get('S') || 237), EL = +(q.get('el') || 0.14);
+  const views = JSON.parse(q.get('v') || 'null') || [
+    { x0: 5, y0: 5, w: 354, h: 355, phi: 0, cx: 177, gy: 338 },
+    { x0: 361, y0: 5, w: 359, h: 355, phi: +(q.get('q34') || 0.85), cx: 183, gy: 338 },
+    { x0: 722, y0: 5, w: 360, h: 355, phi: Math.PI / 2, cx: 166, gy: 337 },
+    { x0: 1084, y0: 5, w: 359, h: 355, phi: Math.PI, cx: 177, gy: 337 },
+  ];
+  window.renderViews = (pose) => {
+    renderer.setScissorTest(false); renderer.setClearColor('#808080'); renderer.clear(); renderer.setScissorTest(true);
+    for (const v of views) {
+      b.setColor(PALETTE3D[v.color || 'yellow']);
+      b.update({ phi: v.phi, pose: v.pose || pose || {}, face: v.face || {}, tilt: v.tilt || 0 });
+      const cam = new THREE.OrthographicCamera(-v.w / 2 / S, v.w / 2 / S, v.h / 2 / S, -v.h / 2 / S, 0.01, 50);
+      cam.position.set(0, 10 * Math.sin(EL), 10 * Math.cos(EL)); cam.lookAt(0, 0, 0); cam.updateMatrixWorld();
+      // el suelo bajo el personaje (0,0,0) cae en (cx, gy) del panel
+      const p = new THREE.Vector3(0, 0, 0).project(cam);
+      const px = (p.x + 1) / 2 * v.w, py = (1 - p.y) / 2 * v.h;
+      const dx = (v.cx - px) / S, dy = (v.gy - py) / S;
+      cam.left -= dx; cam.right -= dx; cam.top += dy; cam.bottom += dy; cam.updateProjectionMatrix();
+      const y = 1086 - v.y0 - v.h;
+      renderer.setViewport(v.x0, y, v.w, v.h); renderer.setScissor(v.x0, y, v.w, v.h);
+      renderer.render(scene, cam);
+    }
+  };
+  window.renderViews();
+  window.READY = true;
+</script></body></html>

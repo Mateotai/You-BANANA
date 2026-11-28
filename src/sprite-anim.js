@@ -253,9 +253,11 @@ function drawVideo(ctx, n) {
   ctx.globalAlpha = 0.45; ctx.font = '600 38px Rubik, Arial, sans-serif'; ctx.fillText('aquí va el video viral', W / 2, H / 2 + 110); ctx.globalAlpha = 1;
 }
 
-export function drawFrame(ctx, sh, t) {
+// opts.green: fondo verde de croma, sin suelo, sin sombras y sin rótulos (para editores de video)
+export function drawFrame(ctx, sh, t, opts = {}) {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   for (const [a, b, n] of sh.videos) if (t >= a && t < b) { drawVideo(ctx, n); return; }
+  if (opts.green) return drawGreen(ctx, sh, t);
   const cam = sh.single ? { x: (charAt(sh.chars[0], t) || { x: 0 }).x, y: 0.5, z: 780 } : { x: sh.camT.x(t), y: sh.camT.y(t), z: sh.camT.z(t) };
   const toScreen = (wx, wz) => { const f = persp(wz); return { x: W / 2 + (wx - cam.x) * cam.z * f, y: H / 2 - (wz * 0.55 - cam.y) * cam.z, S: cam.z * f }; };
   ctx.fillStyle = BG; ctx.fillRect(0, 0, W, H);
@@ -282,11 +284,25 @@ export function drawFrame(ctx, sh, t) {
   if (!sh.single) items.push({ wz: -0.55, draw: () => { const p = toScreen(0, -0.55); drawSprite(ctx, { pose: 'phone', x: p.x, y: p.y, s: (p.S / PX) * 0.85, flip: true }); } });
   items.sort((a, b) => b.wz - a.wz);
   for (const it of items) it.draw();
-  if (sh.labels) for (const [a, b, text] of sh.labels) {
+  if (sh.labels && !opts.noLabels) for (const [a, b, text] of sh.labels) {
     if (t < a || t >= b) continue;
     ctx.globalAlpha = clamp((t - a) / 0.25) * clamp((b - t) / 0.25);
     ctx.fillStyle = '#2a2220'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
     ctx.font = '700 46px Rubik, Arial, sans-serif'; ctx.fillText(text, W / 2, 150);
     ctx.globalAlpha = 1;
   }
+}
+
+function drawGreen(ctx, sh, t) {
+  ctx.fillStyle = '#00ff00'; ctx.fillRect(0, 0, W, H);
+  const cam = sh.single ? { x: (charAt(sh.chars[0], t) || { x: 0 }).x, y: 0.5, z: 780 } : { x: sh.camT.x(t), y: sh.camT.y(t), z: sh.camT.z(t) };
+  const toScreen = (wx, wz) => { const f = persp(wz); return { x: W / 2 + (wx - cam.x) * cam.z * f, y: H / 2 - (wz * 0.55 - cam.y) * cam.z, S: cam.z * f }; };
+  const items = [];
+  for (const c of sh.chars) {
+    const st = charAt(c, t);
+    if (!st) continue;
+    items.push({ wz: st.wz, draw: () => { const p = toScreen(st.x, st.wz); drawSprite(ctx, { pose: st.pose, pal: st.pal, x: p.x, y: p.y - st.lift * p.S, s: p.S / PX, flip: st.flip, sx: st.sx, sy: st.sy, rot: st.rot, face: st.face, part: st.part }); } });
+  }
+  items.sort((a, b) => b.wz - a.wz);
+  for (const it of items) it.draw();
 }
