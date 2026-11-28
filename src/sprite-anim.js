@@ -97,12 +97,29 @@ function charAt(c, t) {
 
 // ---------------------------------------------------------------- secuencia de 5 plátanos
 const PALS = ['yellow', 'green', 'pink', 'blue', 'purple'];
-const SLOTS = [[-0.55, 0], [0.55, 0], [-1.2, 0.7], [1.2, 0.7], [0, 1.15]];
-const ENTRY = [-1, 1, -1, 1, -1]; // por dónde entra cada uno (+1 derecha)
-const FACE_RIGHT = [true, false, true, false, true]; // hacia dónde mira sentado (hacia el móvil)
-const FRAMES = [[-0.3, 0.55, 690], [0, 0.58, 520], [-0.15, 0.68, 440], [0, 0.7, 410], [0, 0.76, 400]];
+// SLOTS: sitio de cada plátano [x, fila hacia el fondo]; ENTRY: por dónde entra (+1 derecha);
+// FACE_RIGHT: hacia dónde mira sentado; FRAMES: encuadre [centro x, altura, zoom] con 1, 2, 3... plátanos
+const LAYOUTS = {
+  // 5 clips: dos delante, dos detrás a los lados y uno detrás en el centro
+  cinco: {
+    SLOTS: [[-0.55, 0], [0.55, 0], [-1.2, 0.7], [1.2, 0.7], [0, 1.15]],
+    ENTRY: [-1, 1, -1, 1, -1],
+    FACE_RIGHT: [true, false, true, false, true],
+    FRAMES: [[-0.3, 0.55, 690], [0, 0.58, 520], [-0.15, 0.68, 440], [0, 0.7, 410], [0, 0.76, 400]],
+  },
+  // 3 clips: izquierda, derecha y centro (detrás del móvil)
+  tres: {
+    SLOTS: [[-0.68, 0], [0.68, 0], [0, 0.8]],
+    ENTRY: [-1, 1, 1],
+    FACE_RIGHT: [true, false, false],
+    FRAMES: [[-0.35, 0.55, 690], [0, 0.58, 500], [0, 0.66, 470]],
+  },
+};
 
-export function buildShow({ videoLen = 2.5, count = 5 } = {}) {
+// videos: [{ len, frames, n }] (clips de verdad) o nada (pantallas negras de videoLen segundos)
+export function buildShow({ videoLen = 2.5, count = 5, videos = null, layout = null } = {}) {
+  if (videos) count = videos.length;
+  const { SLOTS, ENTRY, FACE_RIGHT, FRAMES } = LAYOUTS[layout || (count <= 3 ? 'tres' : 'cinco')];
   const sh = { chars: [], videos: [], cues: [], cam: { x: [], y: [], z: [] } };
   const cams = (t, F) => ['x', 'y', 'z'].forEach((k, j) => sh.cam[k].push([t, F[j], 'io']));
   cams(0, FRAMES[0]);
@@ -120,9 +137,10 @@ export function buildShow({ videoLen = 2.5, count = 5 } = {}) {
   t += 0.9;
 
   for (let v = 0; v < count; v++) {
-    sh.videos.push([t, t + videoLen, v + 1]);
+    const len = videos ? videos[v].len : videoLen;
+    sh.videos.push([t, t + len, v + 1, videos ? videos[v] : null]);
     sh.cues.push({ t: t - 0.05, type: 'whoosh', gain: 0.6 });
-    t += videoLen;
+    t += len;
     const Te = t;
     const seated = sh.chars.slice();
     // todos ponen la boca en U invertida a la vez
@@ -246,8 +264,16 @@ const BG = '#e0d6d3';
 const persp = (wz) => 1 / (1 + 0.34 * wz);
 const PX = 230; // px del dibujo que mide el cuerpo (para pasar de unidades a escala del dibujo)
 
-function drawVideo(ctx, n) {
+function drawVideo(ctx, n, img) {
   ctx.fillStyle = '#050505'; ctx.fillRect(0, 0, W, H);
+  if (img && img.naturalWidth) {
+    // a pantalla completa (recortando lo que sobre si el clip no es 9:16)
+    const k = Math.max(W / img.naturalWidth, H / img.naturalHeight);
+    const sw = W / k, shh = H / k;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, (img.naturalWidth - sw) / 2, (img.naturalHeight - shh) / 2, sw, shh, 0, 0, W, H);
+    return;
+  }
   ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.font = '800 170px Rubik, Arial, sans-serif'; ctx.fillText(`VIDEO ${n}`, W / 2, H / 2 - 20);
   ctx.globalAlpha = 0.45; ctx.font = '600 38px Rubik, Arial, sans-serif'; ctx.fillText('aquí va el video viral', W / 2, H / 2 + 110); ctx.globalAlpha = 1;
@@ -256,7 +282,7 @@ function drawVideo(ctx, n) {
 // opts.green: fondo verde de croma, sin suelo, sin sombras y sin rótulos (para editores de video)
 export function drawFrame(ctx, sh, t, opts = {}) {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  for (const [a, b, n] of sh.videos) if (t >= a && t < b) { drawVideo(ctx, n); return; }
+  for (const [a, b, n] of sh.videos) if (t >= a && t < b) { drawVideo(ctx, n, opts.img); return; }
   if (opts.green) return drawGreen(ctx, sh, t);
   const cam = sh.single ? { x: (charAt(sh.chars[0], t) || { x: 0 }).x, y: 0.5, z: 780 } : { x: sh.camT.x(t), y: sh.camT.y(t), z: sh.camT.z(t) };
   const toScreen = (wx, wz) => { const f = persp(wz); return { x: W / 2 + (wx - cam.x) * cam.z * f, y: H / 2 - (wz * 0.55 - cam.y) * cam.z, S: cam.z * f }; };
@@ -305,4 +331,12 @@ function drawGreen(ctx, sh, t) {
   }
   items.sort((a, b) => b.wz - a.wz);
   for (const it of items) it.draw();
+}
+
+// clip que se ve en el instante t: { video, frame } (frame empieza en 1) o null
+export function videoFrameAt(sh, t) {
+  for (const [a, b, n, vid] of sh.videos) {
+    if (t >= a && t < b && vid && vid.frames) return { vid, frame: Math.min(vid.n, Math.floor((t - a) * FPS + 1e-6) + 1) };
+  }
+  return null;
 }

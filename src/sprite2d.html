@@ -12,15 +12,28 @@
 <body>
 <canvas id="c" width="1080" height="1920"></canvas>
 <script type="module">
-  import { buildShow, buildTest, drawFrame, FPS, loadSprites, setStyle } from './sprite-anim.js';
+  import { buildShow, buildTest, drawFrame, videoFrameAt, FPS, loadSprites, setStyle } from './sprite-anim.js';
   setStyle(new URLSearchParams(location.search).get('style') || 'vector');
   await loadSprites();
   const params = new URLSearchParams(location.search);
-  const sh = params.get('scene') === 'test' ? buildTest() : buildShow({ count: +(params.get('count') || 5) });
+  // ?cfg={"layout":"tres","videos":[{"frames":"/out/.../","n":109,"len":3.63}, ...]}: clips de verdad
+  const cfg = params.get('cfg') ? JSON.parse(params.get('cfg')) : null;
+  const sh = params.get('scene') === 'test' ? buildTest()
+    : buildShow({ count: +(params.get('count') || 5), videos: cfg ? cfg.videos : null, layout: cfg ? cfg.layout : null });
   const ctx = document.getElementById('c').getContext('2d');
   const OPTS = { green: params.get('bg') === 'green' };
-  window.renderFrame = async (t) => { drawFrame(ctx, sh, t, OPTS); return true; };
-  window.META = { DURATION: sh.duration, FPS, cues: sh.cues, labels: sh.labels || [] };
+  const img = new Image();
+  let lastSrc = '';
+  window.renderFrame = async (t) => {
+    const vf = videoFrameAt(sh, t);
+    if (vf) {
+      const src = vf.vid.frames + String(vf.frame).padStart(5, '0') + '.jpg';
+      if (src !== lastSrc) { lastSrc = src; img.src = src; await img.decode().catch(() => {}); }
+    }
+    drawFrame(ctx, sh, t, { ...OPTS, img: vf ? img : null });
+    return true;
+  };
+  window.META = { DURATION: sh.duration, FPS, cues: sh.cues, labels: sh.labels || [], videos: sh.videos.map(([a, b, n]) => [a, b, n]) };
   await document.fonts.ready;
   await window.renderFrame(0);
   window.READY = true;

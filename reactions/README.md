@@ -45,3 +45,20 @@ Al final, el plátano le da al replay y el viral vuelve a empezar, así que el v
 - `react`: segundos de reacción (U invertida) entre un video y el siguiente.
 - `focusY`: qué altura del viral queda en el centro al llenar la pantalla.
 - `volume`: volumen de cada viral (1.6 por defecto).
+
+## Reacción 2D con clips de verdad (`render-toon.cjs --plan`)
+
+```bash
+node scripts/render-toon.cjs show --plan reactions/tres-clips.json   # -> out/sprite2d-show-tres-clips.mp4
+```
+
+`tres-clips.json` es una lista de clips. Cada clip se ve a pantalla completa y con su sonido.
+Al acabar cada uno, los plátanos ponen la boca en U invertida y se llama al siguiente plátano.
+
+- Con **3 clips** se usan 3 plátanos: amarillo a la izquierda, verde a la derecha y rosa en el centro (detrás del móvil).
+- Con **5 clips** se usa la disposición completa, con dos plátanos más detrás, a los lados.
+- `layout` permite forzar la disposición: `"tres"` o `"cinco"`.
+- Cada clip admite `trimStart`, `trimEnd` y `volume`.
+
+Los clips van en `reactions/videos/` (no se suben a git). Para separar los clips de un video de reacción,
+busca los cortes con `ffmpeg -i video.mp4 -vf "select='gt(scene,0.25)',showinfo" -f null -` y recorta cada tramo.

@@ -1,0 +1,10 @@
+{
+  "name": "tres-clips",
+  "layout": "tres",
+  "volume": 1.3,
+  "videos": [
+    { "video": "videos/clips/clip-1-grua.mp4" },
+    { "video": "videos/clips/clip-2-garaje.mp4" },
+    { "video": "videos/clips/clip-3-demolicion.mp4" }
+  ]
+}
